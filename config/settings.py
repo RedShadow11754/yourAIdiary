@@ -41,6 +41,7 @@ INSTALLED_APPS = [
     'accounts',
     'chat',
     'memory',
+    'diary',
 ]
 
 MIDDLEWARE = [
@@ -133,10 +134,24 @@ SIMPLE_JWT = {
 CELERY_BROKER_URL = "redis://localhost:6379/0"
 CELERY_RESULT_BACKEND = "redis://localhost:6379/0"
 
+# CELERY_BEAT_SCHEDULE = {
+#     "run-memory-extraction-every-10-minutes": {
+#         "task": "memory.tasks.run_memory_extraction",
+#         "schedule": 600,  # every 600 seconds = 10 minutes
+#     },
+# }
+from celery.schedules import crontab
+
 CELERY_BEAT_SCHEDULE = {
+    # Memory extraction — every 10 minutes
     "run-memory-extraction-every-10-minutes": {
         "task": "memory.tasks.run_memory_extraction",
-        "schedule": 600,  # every 600 seconds = 10 minutes
+        "schedule": 600,
+    },
+    # Diary extraction — every day at midnight
+    "run-diary-extraction-at-midnight": {
+        "task": "diary.tasks.run_diary_extraction",
+        "schedule": crontab(hour=0, minute=0),
     },
 }
 CELERY_WORKER_POOL = "solo"
