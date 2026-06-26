@@ -25,6 +25,5 @@ def get_today_chats(user):
         my_list = my_list[:40]
     for msg in my_list:
         role = "user" if msg['role'] == 'user' else "AI"
-        print(f"{role}: {msg['content']}\n")
         content += f"{role}: {msg['content']}\n\n"
     return content,len(my_list)

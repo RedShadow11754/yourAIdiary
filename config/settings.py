@@ -40,6 +40,7 @@ INSTALLED_APPS = [
     'django.contrib.staticfiles',
     'accounts',
     'chat',
+    'memory',
 ]
 
 MIDDLEWARE = [
@@ -129,3 +130,13 @@ SIMPLE_JWT = {
     'ACCESS_TOKEN_LIFETIME': timedelta(minutes=120),
     'REFRESH_TOKEN_LIFETIME': timedelta(days=1),
 }
+CELERY_BROKER_URL = "redis://localhost:6379/0"
+CELERY_RESULT_BACKEND = "redis://localhost:6379/0"
+
+CELERY_BEAT_SCHEDULE = {
+    "run-memory-extraction-every-10-minutes": {
+        "task": "memory.tasks.run_memory_extraction",
+        "schedule": 600,  # every 600 seconds = 10 minutes
+    },
+}
+CELERY_WORKER_POOL = "solo"
