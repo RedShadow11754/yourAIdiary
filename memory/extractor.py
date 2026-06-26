@@ -5,9 +5,14 @@ from chat.models import Message
 from .models import UserCoreMemory, ChatSession
 from .episodic import store_episodic_memory
 import os
+import dotenv
+
+dotenv.load_dotenv()
+
+groq_api_key = os.getenv('GROQ_API_KEY')
 
 llm = ChatGroq(
-    api_key=os.getenv("GROQ_API_KEY"),
+    api_key=groq_api_key,
     model_name="llama-3.1-8b-instant"
 )
 
@@ -63,11 +68,19 @@ CONVERSATION:
     response = llm.invoke(prompt)
     raw = response.content.strip()
 
+    # Strip markdown code fences
+    if raw.startswith("```"):
+        raw = raw.split("```")[1]
+        if raw.startswith("json"):
+            raw = raw[4:]
+        raw = raw.strip()
+
     try:
         memories = json.loads(raw)
     except json.JSONDecodeError:
         print(f"[Extractor] Failed to parse episodic memories JSON: {raw}")
         return
+
 
     for memory in memories:
         summary = memory.get("summary", "").strip()
@@ -79,9 +92,6 @@ CONVERSATION:
 
 
 def update_core_memory(session: ChatSession):
-    """
-    Ask the LLM to update the user's core profile based on this session.
-    """
     transcript = _get_session_messages(session)
     if not transcript.strip():
         return
@@ -101,7 +111,7 @@ Existing profile:
 New conversation:
 {transcript}
 
-Respond ONLY with a valid JSON object. No explanation, no preamble.
+Respond ONLY with a valid JSON object. No explanation, no preamble, no markdown, no code fences.
 Only include fields that have new or updated information. Leave out fields with no updates.
 
 Available fields:
@@ -115,12 +125,19 @@ Available fields:
 - important_life_events (string — significant events)
 - current_life_context (string — what's going on in their life right now)
 
-Example:
-{{"current_life_context": "Recently started a new job and is adjusting to the workload.", "relationships": "Sister Maya - close but complicated. Best friend Joe - just got married."}}
+Example response:
+{{"current_life_context": "Recently started a new job.", "known_name": "Daniel"}}
 """
 
     response = llm.invoke(prompt)
     raw = response.content.strip()
+
+    # Strip markdown code fences if LLM wraps response in them
+    if raw.startswith("```"):
+        raw = raw.split("```")[1]          # get content between first pair of fences
+        if raw.startswith("json"):
+            raw = raw[4:]                  # strip the "json" language tag
+        raw = raw.strip()
 
     try:
         updates = json.loads(raw)
@@ -134,7 +151,6 @@ Example:
     core.save()
 
     print(f"[Extractor] Updated core memory for user {session.user.username}")
-
 
 def process_session(session: ChatSession):
     """Main entry point. Runs both extractors then marks session as processed."""
