@@ -178,18 +178,17 @@ class GoogleAuthInitView(APIView):
 
 
 class GoogleAuthCallbackView(APIView):
-    """
-    Step 2 — Google redirects back here with a code.
-    We exchange it for user info, create or fetch the user, and return JWT tokens.
-    """
     permission_classes = [AllowAny]
 
     def get(self, request):
+        from django.shortcuts import redirect as django_redirect
+        import urllib.parse
+
+        FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:5173")
         code = request.GET.get("code")
         if not code:
-            return Response({"error": "No authorization code provided."}, status=400)
+            return django_redirect(f"{FRONTEND_URL}/login?error=no_code")
 
-        # Exchange code for access token
         token_response = http_requests.post(
             "https://oauth2.googleapis.com/token",
             data={
@@ -200,65 +199,32 @@ class GoogleAuthCallbackView(APIView):
                 "grant_type": "authorization_code",
             }
         )
-
         token_data = token_response.json()
-
         if "error" in token_data:
-            return Response({"error": token_data.get("error_description", "Google auth failed.")}, status=400)
+            return django_redirect(f"{FRONTEND_URL}/login?error=google_failed")
 
-        access_token = token_data.get("access_token")
-
-        # Use access token to get user info from Google
-        user_info_response = http_requests.get(
+        user_info = http_requests.get(
             "https://www.googleapis.com/oauth2/v2/userinfo",
-            headers={"Authorization": f"Bearer {access_token}"}
-        )
-
-        user_info = user_info_response.json()
+            headers={"Authorization": f"Bearer {token_data.get('access_token')}"}
+        ).json()
 
         email = user_info.get("email", "").lower()
-        name = user_info.get("name", "")
-        google_id = user_info.get("id", "")
-        is_verified = user_info.get("verified_email", False)
+        name  = user_info.get("name", "")
+        if not email or not user_info.get("verified_email"):
+            return django_redirect(f"{FRONTEND_URL}/login?error=unverified_email")
 
-        if not email:
-            return Response({"error": "Could not retrieve email from Google."}, status=400)
-
-        if not is_verified:
-            return Response({"error": "Your Google email is not verified."}, status=400)
-
-        # Get or create the user
         user, created = User.objects.get_or_create(
             email=email,
-            defaults={
-                "username": email,
-                "first_name": name.split()[0] if name else "",
-                "last_name": " ".join(name.split()[1:]) if len(name.split()) > 1 else "",
-                "is_active": True,
-            }
+            defaults={"username": email, "first_name": name.split()[0] if name else "", "is_active": True}
         )
-
         if created:
-            # Set unusable password since they log in via Google
-            user.set_unusable_password()
-            user.save()
-
-            # Create profile and personality for new users
+            user.set_unusable_password(); user.save()
             UserProfile.objects.get_or_create(user=user, defaults={"is_email_verified": True})
             UserPersonality.objects.get_or_create(user=user)
-
         else:
-            # Existing user — make sure they're active and verified
-            if not user.is_active:
-                user.is_active = True
-                user.save(update_fields=["is_active"])
+            if not user.is_active: user.is_active = True; user.save(update_fields=["is_active"])
             UserProfile.objects.filter(user=user).update(is_email_verified=True)
 
         tokens = get_tokens_for_user(user)
-        return Response({
-            "access": tokens["access"],
-            "refresh": tokens["refresh"],
-            "email": user.email,
-            "name": name,
-            "is_new_user": created,
-        })
+        params = urllib.parse.urlencode({"access": tokens["access"], "refresh": tokens["refresh"], "email": user.email, "new_user": "1" if created else "0"})
+        return django_redirect(f"{FRONTEND_URL}/auth/google/success?{params}")

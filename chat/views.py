@@ -34,9 +34,11 @@ class ChatView(APIView):
         # --- Memory: pull core profile (always injected) ---
         core, _ = UserCoreMemory.objects.get_or_create(user=request.user)
         core_memory_str = core.to_prompt_string()
+        print(f"core memory: {core_memory_str}")
 
         # --- Memory: retrieve relevant episodic memories ---
         episodic_memories_str = retrieve_relevant_memories(request.user, message)
+        print(f"episodic memory{episodic_memories_str}")
 
         # --- Build ultimate_info ---
         ultimate_info = ""
@@ -80,6 +82,45 @@ class ChatView(APIView):
 
         return Response({"reply": reply})
 
+from django.db.models import Min
+import json
+
+class ChatHistoryView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        """Returns list of days the user has chatted, with full messages for each."""
+        # Get all unique days this user has messages
+        days = (
+            Message.objects
+            .filter(user=request.user, is_deleted=False)
+            .values('day')
+            .distinct()
+            .order_by('-day')
+        )
+
+        result = []
+        for entry in days:
+            day = entry['day']
+            messages = Message.objects.filter(
+                user=request.user,
+                day=day,
+                is_deleted=False
+            ).order_by('created_at').values('role', 'content', 'created_at')
+
+            result.append({
+                'date': str(day),
+                'messages': [
+                    {
+                        'role': m['role'],
+                        'content': m['content'],
+                        'time': m['created_at'].strftime('%I:%M %p'),
+                    }
+                    for m in messages
+                ]
+            })
+
+        return Response(result)
 
 class UpdatePersonalityView(APIView):
     permission_classes = [IsAuthenticated]
@@ -88,14 +129,14 @@ class UpdatePersonalityView(APIView):
         UserPersonality.objects.update_or_create(
             user=request.user,
             defaults={
-                "user_name": request.data.get('user_name'),
-                "sassiness": request.data.get('sassiness', 2),
-                "warmth": request.data.get('warmth', 2),
-                "banter": request.data.get('banter', 2),
-                "directness": request.data.get('directness', 2),
-                "verbosity": request.data.get('verbosity', 2),
-                "emoji": request.data.get('emoji', 2),
-                "custom_prompt": request.data.get('custom_prompt'),
+                "user_name":    request.data.get('user_name') or 'user',
+                "sassiness":    request.data.get('sassiness', 2),
+                "warmth":       request.data.get('warmth', 2),
+                "banter":       request.data.get('banter', 2),
+                "directness":   request.data.get('directness', 2),
+                "verbosity":    request.data.get('verbosity', 2),
+                "emoji":        request.data.get('emoji', 2),
+                "custom_prompt": request.data.get('custom_prompt') or None,
             }
         )
         return Response({"status": "success"})

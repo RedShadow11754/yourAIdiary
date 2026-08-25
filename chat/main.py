@@ -12,7 +12,7 @@ class Chat():
         groq_api_key = os.getenv('GROQ_API_KEY')
         self.llm = ChatGroq(
             api_key=groq_api_key,
-            model_name="llama-3.1-8b-instant"
+            model_name="openai/gpt-oss-20b"
         )
 
     def answer(self, question,sassiness_prompt,warmth_prompt,banter_prompt,directness_prompt,verbosity_prompt,emoji_prompt,custom_prompt=None,daily_chats=None, user_name=None, ultimate_info=""):
