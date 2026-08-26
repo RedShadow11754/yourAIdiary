@@ -46,12 +46,18 @@ class RegisterView(APIView):
 
         # Generate and send OTP
         otp = OTPVerification.generate_for_user(user)
-        send_otp_email(email, email, otp.code)
+        email_sent = send_otp_email(email, email, otp.code)
 
-        return Response({
+        response_data = {
             "message": "Account created. Please check your email for your verification code.",
-            "email": email
-        }, status=201)
+            "email": email,
+        }
+        # If email failed (not configured on Render), return OTP in response for testing
+        if not email_sent:
+            response_data["otp_code"] = otp.code
+            response_data["message"] = "Account created. Email not configured — use the otp_code below to verify."
+
+        return Response(response_data, status=201)
 
 
 class VerifyOTPView(APIView):
