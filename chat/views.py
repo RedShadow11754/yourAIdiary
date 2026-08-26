@@ -12,13 +12,31 @@ from memory.episodic import retrieve_relevant_memories
 from memory.models import UserCoreMemory
 
 
+DEFAULT_PROMPTS = {
+    "sassiness": {1: "Be gentle and soft-spoken. Never sassy.", 2: "Mild playful edge, light tease here and there.", 3: "Deliciously sassy. Roast with love.",},
+    "warmth": {1: "Cool, calm, and composed.", 2: "Warm and caring without being over the top.", 3: "Deeply warm and affectionate. Make people feel seen.",},
+    "banter": {1: "Keep things straightforward. No playful jabs.", 2: "Light banter and occasional jokes.", 3: "Banter machine. Witty comebacks and playful roasts.",},
+    "directness": {1: "Gentle and indirect. Hint at things.", 2: "Fairly direct but cushion the blow.", 3: "Brutally honest. No sugarcoating.",},
+    "verbosity": {1: "Short and punchy. One or two sentences.", 2: "Medium-length, enough detail.", 3: "Rich, detailed, thoughtful responses.",},
+    "emoji": {1: "Never use emoji.", 2: "Use emoji sparingly.", 3: "Use emoji liberally. 💜✨🌼",},
+}
+
+
+def _get_prompt(personality, level):
+    """Get prompt from DB, falling back to defaults if not seeded."""
+    obj = PersonalityPrompt.objects.filter(personality=personality, level=level).first()
+    if obj:
+        return obj.prompt
+    return DEFAULT_PROMPTS.get(personality, {}).get(level, "Be yourself.")
+
+
 def promptConvertor(sassiness_level, warmth_level, banter_level, directness_level, emoji_level, verbosity_level):
-    sassiness_prompt = PersonalityPrompt.objects.get(personality="sassiness", level=sassiness_level).prompt
-    warmth_prompt = PersonalityPrompt.objects.get(personality="warmth", level=warmth_level).prompt
-    banter_prompt = PersonalityPrompt.objects.get(personality="banter", level=banter_level).prompt
-    directness_prompt = PersonalityPrompt.objects.get(personality="directness", level=directness_level).prompt
-    emoji_prompt = PersonalityPrompt.objects.get(personality="emoji", level=emoji_level).prompt
-    verbosity_prompt = PersonalityPrompt.objects.get(personality="verbosity", level=verbosity_level).prompt
+    sassiness_prompt = _get_prompt("sassiness", sassiness_level)
+    warmth_prompt = _get_prompt("warmth", warmth_level)
+    banter_prompt = _get_prompt("banter", banter_level)
+    directness_prompt = _get_prompt("directness", directness_level)
+    emoji_prompt = _get_prompt("emoji", emoji_level)
+    verbosity_prompt = _get_prompt("verbosity", verbosity_level)
     return sassiness_prompt, warmth_prompt, banter_prompt, directness_prompt, emoji_prompt, verbosity_prompt
 
 
