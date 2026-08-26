@@ -1,18 +1,30 @@
-from sentence_transformers import SentenceTransformer
+import requests as http_requests
+import os
 
-# Loaded once at startup — not on every request
-_model = None
-
-def get_embedding_model():
-    global _model
-    if _model is None:
-        print("[Embeddings] Loading sentence-transformer model...")
-        _model = SentenceTransformer("all-MiniLM-L6-v2")
-        print("[Embeddings] Model loaded.")
-    return _model
+JINA_API_URL = "https://api.jina.ai/v1/embeddings"
+JINA_API_KEY = os.getenv("JINA_API_KEY", "")
+# Jina v3 supports dimensions param — we use 384 to match our existing Qdrant collection
+EMBEDDING_DIM = 384
 
 
 def embed(text: str) -> list[float]:
-    """Turn a string into a vector."""
-    model = get_embedding_model()
-    return model.encode(text, normalize_embeddings=True).tolist()
+    """Turn a string into a vector using Jina Embeddings API."""
+    if not JINA_API_KEY:
+        raise RuntimeError("JINA_API_KEY is not set. Cannot generate embeddings.")
+
+    response = http_requests.post(
+        JINA_API_URL,
+        headers={
+            "Authorization": f"Bearer {JINA_API_KEY}",
+            "Content-Type": "application/json",
+        },
+        json={
+            "model": "jina-embeddings-v3",
+            "input": [text],
+            "dimensions": EMBEDDING_DIM,
+        },
+        timeout=30,
+    )
+    response.raise_for_status()
+    data = response.json()
+    return data["data"][0]["embedding"]

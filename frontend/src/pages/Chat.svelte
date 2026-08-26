@@ -1,308 +1,297 @@
 <script>
+  import Logo from '../lib/components/Logo.svelte';
   import { api } from '../lib/api.js';
-  import { getAuth } from '../lib/stores.svelte.js';
+  import { getAuth, toast } from '../lib/stores.svelte.js';
   import { navigate } from '../lib/router.svelte.js';
 
   const auth = getAuth();
 
-  $effect(() => {
-    if (!auth.isAuthenticated) navigate('/login');
-  });
-
+  let days = $state([]); // [{date, messages:[{role,content,time}]}]
+  let selectedDay = $state(null);
   let messages = $state([]);
-  let inputText = $state('');
-  let loading = $state(false);
-  let chatContainer;
-  let historySidebar = $state(false);
-  let chatHistory = $state([]);
-  let viewingPast = $state(false);
-  let viewingDate = $state('');
+  let draft = $state('');
+  let sending = $state(false);
+  let loadingHistory = $state(true);
+  let showRail = $state(false); // mobile drawer
+  let scroller;
+  let textarea;
 
-  // Load chat history on mount
-  $effect(() => {
-    if (auth.isAuthenticated) {
-      loadHistory();
-    }
-  });
+  const SUGGESTIONS = [
+    "Hi Daisy! I'm new here 👋",
+    'I had a weird day today…',
+    'Help me plan my week',
+    'I just need to vent about something',
+  ];
 
-  async function loadHistory() {
+  function fmtDayLabel(dateStr) {
+    const d = new Date(dateStr + 'T12:00:00');
+    const today = new Date();
+    const yesterday = new Date();
+    yesterday.setDate(today.getDate() - 1);
+    if (dateStr === today.toISOString().slice(0, 10)) return 'Today';
+    if (dateStr === yesterday.toISOString().slice(0, 10)) return 'Yesterday';
+    return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  }
+
+  function fmtDaySub(dateStr) {
+    return new Date(dateStr + 'T12:00:00').toLocaleDateString('en-US', {
+      month: 'long', day: 'numeric', year: 'numeric',
+    });
+  }
+
+  async function loadHistory(keepSelection = false) {
+    loadingHistory = true;
     try {
-      const data = await api.getChatHistory();
-      chatHistory = data;
-    } catch (e) {
-      console.error('Failed to load history', e);
+      const history = await api.getChatHistory();
+      days = Array.isArray(history) ? history : [];
+      if (keepSelection && selectedDay) {
+        selectDay(selectedDay);
+      } else if (days.length > 0) {
+        selectDay(days[0].date);
+      }
+    } catch {
+      // first-time user or network issue — start fresh
+      days = [];
+    } finally {
+      loadingHistory = false;
     }
   }
 
-  function isToday(day) {
-    const d = new Date(day + 'T00:00:00');
-    const now = new Date();
-    return d.getFullYear() === now.getFullYear() &&
-           d.getMonth() === now.getMonth() &&
-           d.getDate() === now.getDate();
+  function selectDay(date) {
+    const day = days.find((d) => d.date === date);
+    selectedDay = date;
+    messages = day ? [...day.messages] : [];
+    scrollToBottom(true);
   }
 
-  function loadDayMessages(day) {
-    const dayEntry = chatHistory.find(d => d.date === day);
-    if (dayEntry) {
-      messages = dayEntry.messages.map(m => ({
-        role: m.role,
-        content: m.content,
-        time: m.time,
-      }));
-      viewingPast = !isToday(day);
-      viewingDate = day;
-      historySidebar = false;
-      inputText = '';
-      scrollToBottom();
-    }
+  function scrollToBottom(instant = false) {
+    requestAnimationFrame(() => {
+      scroller?.scrollTo({ top: scroller.scrollHeight, behavior: instant ? 'auto' : 'smooth' });
+    });
   }
 
-  function goToToday() {
-    messages = [];
-    viewingPast = false;
-    viewingDate = '';
-    inputText = '';
-  }
+  async function send(text) {
+    const msg = (text ?? draft).trim();
+    if (!msg || sending) return;
 
-  async function sendMessage() {
-    if (!inputText.trim() || loading) return;
-
-    const userMsg = {
-      role: 'user',
-      content: inputText.trim(),
-      time: new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }),
-    };
-    messages = [...messages, userMsg];
-    inputText = '';
-    loading = true;
+    draft = '';
+    resizeTextarea();
+    messages.push({ role: 'user', content: msg, time: nowTime() });
+    messages = [...messages];
+    sending = true;
     scrollToBottom();
 
     try {
-      const data = await api.sendMessage(userMsg.content);
-      const aiMsg = {
-        role: 'ai',
-        content: data.reply,
-        time: new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }),
-      };
-      messages = [...messages, aiMsg];
-      scrollToBottom();
-    } catch (e) {
-      messages = [...messages, {
-        role: 'ai',
-        content: 'Sorry, something went wrong. Try again in a moment.',
-        time: new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }),
-      }];
+      const res = await api.sendMessage(msg);
+      messages.push({ role: 'ai', content: res.reply, time: nowTime() });
+      messages = [...messages];
+      loadHistory(true);
+    } catch (err) {
+      toast(err?.error || 'Daisy could not reply — check your connection', 'error');
     } finally {
-      loading = false;
-      loadHistory(); // refresh sidebar
+      sending = false;
+      scrollToBottom();
+      textarea?.focus();
     }
   }
 
-  function scrollToBottom() {
-    setTimeout(() => {
-      if (chatContainer) {
-        chatContainer.scrollTop = chatContainer.scrollHeight;
-      }
-    }, 50);
+  function nowTime() {
+    return new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
   }
 
-  function handleKeydown(e) {
+  function resizeTextarea() {
+    if (!textarea) return;
+    textarea.style.height = 'auto';
+    textarea.style.height = Math.min(textarea.scrollHeight, 160) + 'px';
+  }
+
+  function onKeydown(e) {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
-      sendMessage();
+      send();
     }
   }
 
-  function formatDay(day) {
-    const date = new Date(day + 'T00:00:00');
-    const today = new Date();
-    today.setHours(0,0,0,0);
-    const diff = today - date;
-    if (diff === 0) return 'Today';
-    if (diff === 86400000) return 'Yesterday';
-    return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-  }
+  // Welcome banner for brand-new users
+  let isNewUser = typeof window !== 'undefined' && sessionStorage.getItem('daisy_welcome') === 'new';
+
+  $effect(() => {
+    loadHistory();
+    textarea?.focus();
+  });
 </script>
 
-<div class="flex h-screen pt-16">
-  <!-- History sidebar -->
-  <div class="hidden lg:flex flex-col w-72 border-r border-glass-border/30 bg-surface/80 backdrop-blur-xl">
-    <div class="p-4 border-b border-glass-border/30">
-      <h2 class="text-sm font-semibold text-white/70 uppercase tracking-wider">History</h2>
-    </div>
-    <div class="flex-1 overflow-y-auto p-2 space-y-1">
-      {#each chatHistory as day}
-        <button
-          onclick={() => loadDayMessages(day.date)}
-          class="w-full text-left px-3 py-2.5 rounded-xl hover:bg-primary/10 transition-all duration-200 group"
-        >
-          <div class="flex items-center gap-2">
-            <span class="text-sm text-white/80 group-hover:text-white transition-colors">
-              {formatDay(day.date)}
-            </span>
-            {#if isToday(day.date)}
-              <span class="text-[10px] px-1.5 py-0.5 rounded-full bg-green-400/15 text-green-400 font-medium">Today</span>
-            {:else}
-              <span class="text-[10px] px-1.5 py-0.5 rounded-full bg-white/5 text-white/30">Read only</span>
-            {/if}
-          </div>
-          <div class="text-xs text-white/40 mt-0.5 truncate">
-            {day.messages.length} messages
-          </div>
-        </button>
-      {/each}
-      {#if chatHistory.length === 0}
-        <p class="text-sm text-white/30 text-center mt-8">No conversations yet</p>
-      {/if}
-    </div>
+<div class="max-w-6xl mx-auto px-4 sm:px-6 h-[calc(100vh-4rem)] flex flex-col">
+  <!-- Mobile day-rail toggle -->
+  <div class="md:hidden flex items-center gap-3 py-3">
+    <button class="btn-ghost px-4 py-2 text-xs" onclick={() => (showRail = !showRail)}>
+      🗂 Past conversations ({days.length})
+    </button>
+    {#if selectedDay}
+      <span class="text-sm text-[var(--color-ink-dim)]">{fmtDayLabel(selectedDay)}</span>
+    {/if}
   </div>
 
-  <!-- Mobile history overlay -->
-  {#if historySidebar}
-    <div class="fixed inset-0 z-50 lg:hidden">
-      <div class="absolute inset-0 bg-black/50" onclick={() => historySidebar = false}></div>
-      <div class="absolute left-0 top-0 bottom-0 w-72 bg-surface border-r border-glass-border/30 animate-slide-left overflow-y-auto">
-        <div class="p-4 border-b border-glass-border/30 flex items-center justify-between">
-          <h2 class="text-sm font-semibold text-white/70 uppercase tracking-wider">History</h2>
-          <button onclick={() => historySidebar = false} class="text-white/50 hover:text-white">
-            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
-          </button>
-        </div>
-        <div class="p-2 space-y-1">
-          {#each chatHistory as day}
-            <button
-              onclick={() => loadDayMessages(day.date)}
-              class="w-full text-left px-3 py-2.5 rounded-xl hover:bg-primary/10 transition-all duration-200"
-            >
-              <div class="flex items-center gap-2">
-                <span class="text-sm text-white/80">{formatDay(day.date)}</span>
-                {#if isToday(day.date)}
-                  <span class="text-[10px] px-1.5 py-0.5 rounded-full bg-green-400/15 text-green-400 font-medium">Today</span>
-                {/if}
-              </div>
-              <div class="text-xs text-white/40 mt-0.5">{day.messages.length} messages</div>
-            </button>
-          {/each}
-        </div>
-      </div>
-    </div>
-  {/if}
+  <div class="flex flex-1 min-h-0 gap-5 pb-4">
+    <!-- ── History rail ── -->
+    <aside
+      class="{showRail ? 'fixed inset-y-16 left-0 w-72 z-40 p-4 glass-strong overflow-y-auto rounded-r-3xl' : 'hidden'}
+        md:relative md:flex md:flex-col md:w-64 md:p-0 md:bg-transparent md:overflow-hidden shrink-0"
+    >
+      <h2 class="font-display text-sm font-semibold tracking-widest uppercase text-[var(--color-ink-faint)] mb-3 hidden md:block">
+        Conversations
+      </h2>
 
-  <!-- Chat area -->
-  <div class="flex-1 flex flex-col min-w-0">
-    <!-- Chat header -->
-    <div class="flex items-center gap-3 px-4 py-3 border-b border-glass-border/30 bg-surface/50 backdrop-blur-xl">
-      <button onclick={() => historySidebar = true} class="lg:hidden text-white/60 hover:text-white p-1">
-        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/></svg>
-      </button>
-      <div class="w-9 h-9 rounded-xl bg-gradient-to-br from-primary to-accent flex items-center justify-center text-white font-bold text-sm">
-        D
-      </div>
-      <div class="flex-1">
-        <h2 class="text-sm font-semibold text-white">Daisy</h2>
-        {#if viewingPast}
-          <p class="text-xs text-amber-400/80 flex items-center gap-1">
-            <span class="w-1.5 h-1.5 rounded-full bg-amber-400"></span>
-            Viewing {formatDay(viewingDate)} — Read only
+      <div class="flex-1 overflow-y-auto space-y-2 no-scrollbar">
+        {#if loadingHistory}
+          {#each [1, 2, 3] as i}
+            <div class="glass rounded-xl h-14 animate-pulse"></div>
+          {/each}
+        {:else if days.length === 0}
+          <p class="text-sm text-[var(--color-ink-faint)] leading-relaxed px-1">
+            No conversations yet.<br />Say hi to Daisy — she'll remember it. 🌼
           </p>
         {:else}
-          <p class="text-xs text-green-400 flex items-center gap-1">
-            <span class="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse"></span>
-            Online
-          </p>
+          {#each days as d (d.date)}
+            <button
+              onclick={() => { selectDay(d.date); showRail = false; }}
+              class="w-full text-left px-4 py-3 rounded-xl transition-all duration-200 cursor-pointer group
+                {selectedDay === d.date ? 'glass-strong shadow-[inset_0_0_0_1px_rgba(196,181,253,.3)]' : 'hover:bg-white/5'}"
+            >
+              <div class="flex items-center justify-between">
+                <span class="font-medium text-sm {selectedDay === d.date ? 'text-white' : 'text-[var(--color-ink-dim)] group-hover:text-white'}">
+                  {fmtDayLabel(d.date)}
+                </span>
+                <span class="text-[11px] text-[var(--color-ink-faint)]">{d.messages.length} msgs</span>
+              </div>
+              <div class="text-xs text-[var(--color-ink-faint)] mt-0.5 truncate">
+                {d.messages[d.messages.length - 1]?.content.slice(0, 40)}…
+              </div>
+            </button>
+          {/each}
         {/if}
       </div>
-      {#if viewingPast}
-        <button
-          onclick={goToToday}
-          class="px-3 py-1.5 rounded-lg text-xs font-medium text-primary-light bg-primary/10 hover:bg-primary/20 transition-all duration-200"
-        >
-          ← Back to Today
-        </button>
-      {/if}
-    </div>
 
-    <!-- Messages -->
-    <div bind:this={chatContainer} class="flex-1 overflow-y-auto px-4 py-6 space-y-4">
-      {#if messages.length === 0}
-        <div class="flex flex-col items-center justify-center h-full text-center animate-fade">
-          <div class="w-16 h-16 rounded-2xl bg-gradient-to-br from-primary/20 to-accent/20 flex items-center justify-center text-3xl mb-4 animate-float">
-            💬
-          </div>
-          <h3 class="text-xl font-semibold text-white mb-2">Start a conversation</h3>
-          <p class="text-white/40 max-w-sm">Say anything! Daisy remembers your past chats and adapts to your mood.</p>
+      <a href="#/diary" class="btn-ghost w-full py-3 text-sm mt-4 hidden md:inline-flex">
+        📖 My diary
+      </a>
+    </aside>
+
+    <!-- Click-away for mobile drawer -->
+    {#if showRail}
+      <button class="fixed inset-0 z-30 bg-black/50 cursor-default" aria-label="Close conversations" tabindex="-1" onclick={() => (showRail = false)}></button>
+    {/if}
+
+    <!-- ── Chat panel ── -->
+    <section class="flex-1 min-w-0 glass rounded-3xl flex flex-col overflow-hidden">
+      <!-- Header -->
+      <header class="flex items-center gap-3 px-5 py-4 border-b border-white/8 shrink-0">
+        <Logo size={38} />
+        <div>
+          <h1 class="font-display font-semibold">Daisy</h1>
+          <p class="text-xs text-[var(--color-ink-dim)] flex items-center gap-1.5">
+            <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse inline-block"></span>
+            always here · remembers you
+          </p>
         </div>
-      {/if}
+        <a href="#/personality" class="ml-auto btn-ghost px-4 py-2 text-xs">🎭 Tune personality</a>
+      </header>
 
-      {#each messages as msg, i}
-        <div class="flex {msg.role === 'user' ? 'justify-end' : 'justify-start'} animate-slide-up" style="animation-delay: {Math.min(i * 0.05, 0.3)}s;">
-          {#if msg.role !== 'user'}
-            <div class="w-8 h-8 rounded-lg bg-gradient-to-br from-primary to-accent flex items-center justify-center text-white font-bold text-xs mr-2 mt-1 shrink-0">
-              D
-            </div>
-          {/if}
-          <div class="max-w-[75%] group">
-            <div class="px-4 py-2.5 rounded-2xl text-sm leading-relaxed
-              {msg.role === 'user'
-                ? 'bg-gradient-to-br from-primary to-primary-dark text-white rounded-br-sm'
-                : 'bg-surface-lighter border border-glass-border/50 text-white/90 rounded-bl-sm'
-              }"
+      <!-- Messages -->
+      <div bind:this={scroller} class="flex-1 overflow-y-auto px-5 py-6 space-y-5">
+        {#if isNewUser && !loadingHistory}
+          <div class="text-center max-w-md mx-auto pt-6 animate-rise">
+            <Logo size={64} />
+            <h2 class="font-display text-2xl font-bold mt-5">
+              Hi{auth.user?.email ? `, ${auth.user.email.split('@')[0]}` : ''} — I'm Daisy 🌼
+            </h2>
+            <p class="text-[var(--color-ink-dim)] leading-relaxed mt-3">
+              I'm your friend, not an assistant. Talk to me like a person — I'll remember the things that matter,
+              and every night I'll write your day into your diary.
+            </p>
+          </div>
+          <div class="flex flex-wrap gap-2 justify-center pb-2 animate-fade">
+            {#each SUGGESTIONS as s}
+              <button class="btn-ghost px-4 py-2 text-[13px]" onclick={() => send(s)}>{s}</button>
+            {/each}
+          </div>
+        {:else if selectedDay}
+          <div class="text-center mb-2">
+            <span class="inline-block glass rounded-full px-4 py-1.5 text-xs text-[var(--color-ink-dim)]">
+              {fmtDaySub(selectedDay)}
+            </span>
+          </div>
+        {/if}
+
+        {#each messages as m, i}
+          <div class="flex items-end gap-2.5 {m.role === 'user' ? 'flex-row-reverse' : ''}" style="animation: pop .4s cubic-bezier(.34,1.56,.64,1) both; animation-delay: {Math.min(i * 0.03, 0.3)}s">
+            {#if m.role === 'ai'}
+              <Logo size={30} />
+            {:else}
+              <span class="w-7 h-7 shrink-0 rounded-full grid place-items-center text-xs font-bold" style="background:linear-gradient(135deg,#f472b6,#fb7185)">
+                {(auth.user?.email || 'Y')[0].toUpperCase()}
+              </span>
+            {/if}
+            <div
+              class="max-w-[75%] px-4 py-3 text-[15px] leading-relaxed whitespace-pre-wrap break-words
+                {m.role === 'user'
+                  ? 'rounded-3xl rounded-br-md text-white'
+                  : 'glass rounded-3xl rounded-bl-md'}"
+              style={m.role === 'user' ? 'background:linear-gradient(120deg,#7c3aed,#a855f7)' : ''}
             >
-              {msg.content}
+              {m.content}
             </div>
-            <div class="text-[10px] text-white/30 mt-1 {msg.role === 'user' ? 'text-right' : 'text-left'} px-1">
-              {msg.time}
-            </div>
+            <span class="text-[10px] text-[var(--color-ink-faint)] mb-1">{m.time}</span>
           </div>
-        </div>
-      {/each}
+        {/each}
 
-      <!-- Typing indicator -->
-      {#if loading}
-        <div class="flex justify-start animate-fade">
-          <div class="w-8 h-8 rounded-lg bg-gradient-to-br from-primary to-accent flex items-center justify-center text-white font-bold text-xs mr-2 mt-1 shrink-0">
-            D
-          </div>
-          <div class="px-4 py-3 rounded-2xl rounded-bl-sm bg-surface-lighter border border-glass-border/50">
-            <div class="flex gap-1.5">
-              <div class="w-2 h-2 rounded-full bg-primary-light typing-dot"></div>
-              <div class="w-2 h-2 rounded-full bg-primary-light typing-dot"></div>
-              <div class="w-2 h-2 rounded-full bg-primary-light typing-dot"></div>
+        {#if sending}
+          <div class="flex items-end gap-2.5 animate-fade">
+            <Logo size={30} />
+            <div class="glass rounded-3xl rounded-bl-md px-5 py-4 flex items-center gap-1.5">
+              <span class="typing-dot"></span><span class="typing-dot"></span><span class="typing-dot"></span>
             </div>
           </div>
-        </div>
-      {/if}
-    </div>
+        {/if}
 
-    <!-- Input -->
-    <div class="px-4 py-3 border-t border-glass-border/30 bg-surface/50 backdrop-blur-xl">
-      {#if viewingPast}
-        <div class="flex items-center justify-center gap-2 py-2 text-sm text-white/40">
-          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/></svg>
-          You can look back at your past, but you can't change it.
-        </div>
-      {:else}
-        <div class="flex items-end gap-2 max-w-3xl mx-auto">
-          <div class="flex-1 relative">
-            <textarea
-              bind:value={inputText}
-              onkeydown={handleKeydown}
-              placeholder="Type a message..."
-              rows="1"
-              class="w-full px-4 py-3 pr-12 rounded-2xl bg-surface-lighter border border-glass-border text-white text-sm placeholder-white/30 resize-none transition-all duration-300 focus:border-primary"
-              style="min-height: 48px; max-height: 120px;"
-            ></textarea>
+        {#if !sending && messages.length > 0}
+          <div class="text-center pt-1">
+            <button class="text-xs text-[var(--color-ink-faint)] hover:text-white transition-colors cursor-pointer" onclick={() => textarea?.focus()}>
+              ✎ Reply to Daisy…
+            </button>
           </div>
+        {/if}
+      </div>
+
+      <!-- Composer -->
+      <footer class="p-4 border-t border-white/8 shrink-0">
+        <div class="glass-strong rounded-3xl flex items-end gap-2 p-2 pl-5 focus-within:border-[rgba(167,139,250,.6)] focus-within:shadow-[0_0_25px_-8px_rgba(139,92,246,.6)] transition-all duration-300">
+          <textarea
+            bind:this={textarea}
+            bind:value={draft}
+            oninput={resizeTextarea}
+            onkeydown={onKeydown}
+            rows="1"
+            placeholder="Tell Daisy anything… (Enter to send)"
+            class="flex-1 bg-transparent border-none outline-none resize-none py-3 text-[15px] leading-relaxed placeholder:text-[var(--color-ink-faint)] max-h-40"
+          ></textarea>
           <button
-            onclick={sendMessage}
-            disabled={!inputText.trim() || loading}
-            class="w-12 h-12 rounded-xl bg-gradient-to-r from-primary to-accent text-white flex items-center justify-center shrink-0 hover:scale-105 transition-all duration-300 disabled:opacity-30 disabled:cursor-not-allowed btn-glow"
+            class="btn-primary w-11 h-11 !rounded-full shrink-0 grid place-items-center {!draft.trim() || sending ? 'opacity-50 !cursor-not-allowed' : ''}"
+            disabled={!draft.trim() || sending}
+            onclick={() => send()}
+            aria-label="Send message"
           >
-            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"/></svg>
+            {#if sending}
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" class="animate-spin"><path d="M21 12a9 9 0 1 1-6.22-8.56"/></svg>
+            {:else}
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5M5 12l7-7 7 7"/></svg>
+            {/if}
           </button>
         </div>
-      {/if}
-    </div>
+        <p class="text-center text-[11px] text-[var(--color-ink-faint)] mt-2.5">
+          Daisy remembers what matters — but she's an AI, be kind to yourself 💜
+        </p>
+      </footer>
+    </section>
   </div>
 </div>

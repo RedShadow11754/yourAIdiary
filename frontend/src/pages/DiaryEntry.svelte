@@ -1,168 +1,203 @@
 <script>
   import { api } from '../lib/api.js';
-  import { getAuth } from '../lib/stores.svelte.js';
-  import { navigate, getRouter } from '../lib/router.svelte.js';
+  import { toast } from '../lib/stores.svelte.js';
+  import { getRouter, navigate } from '../lib/router.svelte.js';
+  import MoodBadge from '../lib/components/MoodBadge.svelte';
+  import Logo from '../lib/components/Logo.svelte';
+  import { TEMPLATES, downloadDiaryHTML, openPrintView } from '../lib/diaryTemplates.js';
 
-  const auth = getAuth();
   const router = getRouter();
-
-  $effect(() => {
-    if (!auth.isAuthenticated) navigate('/login');
-  });
 
   let entry = $state(null);
   let loading = $state(true);
   let editing = $state(false);
-  let editContent = $state('');
-  let saving = $state(false);
-  let saved = $state(false);
+  let editText = $state('');
+  let savingEdit = $state(false);
+  let pickerOpen = $state(false);
+  let chosenTemplate = $state(TEMPLATES[0].id);
 
-  const moodEmojis = {
-    happy: '😊', sad: '😢', angry: '😤', anxious: '😰', excited: '🤩',
-    lonely: '😔', peaceful: '😌', confused: '😵‍💫', grateful: '🙏', numb: '😶',
-    hopeful: '🌟', frustrated: '😤', melancholic: '🥀', content: '☺️',
-    overwhelmed: '🤯', other: '📝',
-  };
+  const tpl = $derived(TEMPLATES.find((t) => t.id === chosenTemplate) || TEMPLATES[0]);
 
-  $effect(() => {
-    if (router.params.id && auth.isAuthenticated) {
-      loadEntry(router.params.id);
-    }
-  });
+  function fmtFull(dateStr) {
+    return new Date(dateStr + 'T12:00:00').toLocaleDateString('en-US', {
+      weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
+    });
+  }
 
-  async function loadEntry(id) {
+  async function load() {
     loading = true;
     try {
-      entry = await api.getDiaryEntry(id);
-      editContent = entry.content;
-    } catch (e) {
-      console.error('Failed to load entry', e);
+      entry = await api.getDiaryEntry(router.params.id);
+    } catch {
+      toast('Could not load this entry', 'error');
+      navigate('/diary');
     } finally {
       loading = false;
     }
   }
 
-  function startEditing() {
-    editContent = entry.content;
-    editing = true;
-  }
-
-  function cancelEditing() {
-    editing = false;
-    editContent = entry.content;
-  }
-
   async function saveEdit() {
-    if (!editContent.trim()) return;
-    saving = true;
+    if (!editText.trim()) return;
+    savingEdit = true;
     try {
-      await api.editDiaryEntry(router.params.id, editContent.trim());
-      entry = { ...entry, content: editContent.trim(), is_edited: true };
+      await api.editDiaryEntry(entry.id, editText);
+      entry.content = editText;
+      entry.is_edited = true;
       editing = false;
-      saved = true;
-      setTimeout(() => saved = false, 3000);
-    } catch (e) {
-      console.error('Failed to save', e);
+      toast('Entry updated ✏️', 'success');
+    } catch (err) {
+      toast(err?.error || 'Could not save changes', 'error');
     } finally {
-      saving = false;
+      savingEdit = false;
     }
   }
 
-  function formatDate(d) {
-    return new Date(d + 'T00:00:00').toLocaleDateString('en-US', {
-      weekday: 'long', month: 'long', day: 'numeric', year: 'numeric',
-    });
+  function download() {
+    downloadDiaryHTML(entry, chosenTemplate);
+    toast(`Downloaded in "${tpl.name}" style 📥`, 'success');
   }
+
+  function printView() {
+    openPrintView(entry, chosenTemplate);
+  }
+
+  function onPickerKeydown(e) {
+    if (e.key === 'Escape') pickerOpen = false;
+  }
+
+  $effect(() => {
+    if (router.params.id) load();
+  });
 </script>
 
-<div class="min-h-screen pt-24 pb-16 px-4">
-  <div class="max-w-2xl mx-auto">
-    <!-- Back button -->
-    <a href="#/diary" class="inline-flex items-center gap-1.5 text-sm text-white/40 hover:text-white/70 transition-colors mb-6 animate-fade">
-      <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/></svg>
-      Back to diary
-    </a>
+<svelte:window onkeydown={onPickerKeydown} />
 
-    {#if loading}
-      <div class="glass p-8 rounded-3xl animate-shimmer">
-        <div class="h-6 bg-white/5 rounded w-1/3 mb-6"></div>
-        <div class="space-y-3">
-          <div class="h-3 bg-white/5 rounded w-full"></div>
-          <div class="h-3 bg-white/5 rounded w-5/6"></div>
-          <div class="h-3 bg-white/5 rounded w-4/5"></div>
-        </div>
-      </div>
-    {:else if entry}
-      {#if saved}
-        <div class="mb-4 px-4 py-3 rounded-xl bg-green-500/10 border border-green-500/20 text-green-400 text-sm animate-slide-up">
-          ✓ Entry updated!
-        </div>
-      {/if}
+<div class="max-w-3xl mx-auto px-6 py-10">
+  <button class="btn-ghost px-4 py-2 text-sm mb-8" onclick={() => navigate('/diary')}>← Back to diary</button>
 
-      <div class="glass p-8 rounded-3xl animate-scale">
-        <!-- Header -->
-        <div class="flex items-center justify-between mb-6">
-          <div>
-            <div class="flex items-center gap-2 mb-1">
-              <span class="text-2xl">{moodEmojis[entry.mood] || '📝'}</span>
-              <span class="text-xs px-2.5 py-1 rounded-full bg-primary/15 text-primary-light capitalize font-medium">
-                {entry.mood}
-              </span>
-            </div>
-            <p class="text-white/40 text-sm">{formatDate(entry.date)}</p>
-          </div>
-
-          {#if !editing}
-            <button
-              onclick={startEditing}
-              class="px-4 py-2 rounded-xl border border-glass-border text-sm text-white/60 hover:text-white hover:border-primary/50 transition-all duration-300 flex items-center gap-1.5"
-            >
-              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
-              Edit
-            </button>
+  {#if loading}
+    <div class="glass rounded-3xl h-96 animate-pulse"></div>
+  {:else if entry}
+    <!-- Paper reading card -->
+    <article class="glass glow-ring rounded-[2rem] overflow-hidden animate-rise">
+      <header class="px-8 md:px-12 pt-10 pb-7 border-b border-white/8 relative">
+        <div
+          class="absolute inset-x-0 top-0 h-1.5"
+          style="background:linear-gradient(90deg,#7c3aed,#d946ef,#22d3ee)"
+        ></div>
+        <div class="flex flex-wrap items-center gap-4 justify-between">
+          <MoodBadge mood={entry.mood} size="lg" />
+          {#if entry.is_edited}
+            <span class="text-xs text-[var(--color-ink-faint)]">✏️ edited by you</span>
           {/if}
         </div>
+        <h1 class="font-display text-2xl md:text-3xl font-bold mt-5">{fmtFull(entry.date)}</h1>
+      </header>
 
-        <!-- Content -->
+      <div class="px-8 md:px-12 py-9">
         {#if editing}
-          <div class="space-y-4">
-            <textarea
-              bind:value={editContent}
-              rows="15"
-              class="w-full px-4 py-4 rounded-xl bg-surface-lighter border border-glass-border text-white/90 text-sm leading-relaxed resize-none transition-all duration-300"
-            ></textarea>
-            <div class="flex gap-2">
-              <button
-                onclick={saveEdit}
-                disabled={saving}
-                class="px-6 py-2.5 rounded-xl bg-gradient-to-r from-primary to-accent text-white text-sm font-medium hover:scale-[1.02] transition-all duration-300 disabled:opacity-50"
-              >
-                {saving ? 'Saving...' : 'Save Changes'}
-              </button>
-              <button
-                onclick={cancelEditing}
-                class="px-6 py-2.5 rounded-xl border border-glass-border text-white/60 text-sm hover:text-white transition-all duration-300"
-              >
-                Cancel
-              </button>
-            </div>
+          <textarea
+            class="input-field min-h-80 leading-loose"
+            bind:value={editText}
+            placeholder="Rewrite your story…"
+          ></textarea>
+          <div class="flex gap-3 mt-5">
+            <button class="btn-primary px-7 py-3" onclick={saveEdit} disabled={savingEdit || !editText.trim()}>
+              {savingEdit ? 'Saving…' : 'Save changes'}
+            </button>
+            <button class="btn-ghost px-7 py-3" onclick={() => (editing = false)}>Cancel</button>
           </div>
         {:else}
-          <div class="prose prose-invert max-w-none">
-            <div class="text-white/80 text-sm leading-[1.8] whitespace-pre-wrap font-serif">
-              {entry.content}
-            </div>
-          </div>
-        {/if}
-
-        <!-- Narrative thread -->
-        {#if entry.narrative_thread && !editing}
-          <div class="mt-8 pt-6 border-t border-glass-border/30">
-            <p class="text-xs text-white/30 uppercase tracking-wider mb-2">Narrative Thread</p>
-            <p class="text-sm text-white/50 italic">{entry.narrative_thread}</p>
+          <div class="space-y-5 text-[16.5px] leading-[1.95] text-[var(--color-ink)]/90 animate-fade">
+            {#each entry.content.split(/\n+/).filter((p) => p.trim()) as para}
+              <p class="first:first-letter:text-5xl first:first-letter:font-hand first:first-letter:text-[var(--color-primary-300)] first:first-letter:float-left first:first-letter:mr-2.5 first:first-letter:leading-none">
+                {para}
+              </p>
+            {/each}
           </div>
         {/if}
       </div>
-    {/if}
-  </div>
+
+      <footer class="px-8 md:px-12 pb-9 flex flex-wrap items-center gap-3 border-t border-white/8 pt-7">
+        <span class="text-sm text-[var(--color-ink-faint)] mr-auto">written with Daisy 🌼</span>
+        {#if !editing}
+          <button class="btn-ghost px-5 py-2.5 text-sm" onclick={() => { editText = entry.content; editing = true; }}>
+            ✏️ Edit
+          </button>
+          <button class="btn-primary px-7 py-3" onclick={() => (pickerOpen = true)}>
+            ⬇ Download this diary
+          </button>
+        {/if}
+      </footer>
+    </article>
+  {/if}
 </div>
+
+<!-- ── Template picker modal ── -->
+{#if pickerOpen && entry}
+  <div
+    class="fixed inset-0 z-[90] bg-black/70 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-6 animate-fade"
+    role="presentation"
+    onclick={(e) => e.target === e.currentTarget && (pickerOpen = false)}
+  >
+    <div class="glass-strong w-full max-w-4xl max-h-[88vh] rounded-t-3xl sm:rounded-3xl overflow-hidden flex flex-col animate-pop">
+      <header class="flex items-center justify-between px-7 py-5 border-b border-white/10 shrink-0">
+        <div>
+          <h2 class="font-display font-bold text-lg">Choose a diary design</h2>
+          <p class="text-xs text-[var(--color-ink-dim)] mt-0.5">12 handcrafted templates · yours forever</p>
+        </div>
+        <button class="w-9 h-9 rounded-full glass grid place-items-center cursor-pointer hover:border-white/40 transition-colors" aria-label="Close template picker" onclick={() => (pickerOpen = false)}>
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
+        </button>
+      </header>
+
+      <!-- Selected template preview strip -->
+      <div class="px-7 py-4 border-b border-white/10 flex items-center gap-4 shrink-0 flex-wrap">
+        <span class="text-sm text-[var(--color-ink-dim)]">Selected:</span>
+        <span class="inline-flex items-center gap-2.5 glass rounded-full pl-1.5 pr-4 py-1.5">
+          <span class="w-7 h-7 rounded-full border border-white/20" style="background:{tpl.swatch.bg}"></span>
+          <strong class="text-sm" style="color:{tpl.swatch.accent}">{tpl.name}</strong>
+        </span>
+      </div>
+
+      <!-- Template grid -->
+      <div class="overflow-y-auto px-7 py-6 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
+        {#each TEMPLATES as t (t.id)}
+          <button
+            class="text-left rounded-2xl p-3 cursor-pointer transition-all duration-200 group
+              {chosenTemplate === t.id ? 'ring-2 ring-[var(--color-primary-400)] bg-white/8' : 'glass hover:-translate-y-0.5'}"
+            onclick={() => (chosenTemplate = t.id)}
+          >
+            <!-- Mini page mock -->
+            <div class="rounded-xl h-32 relative overflow-hidden mb-3 shadow-inner" style="background:{t.swatch.bg}">
+              <div class="absolute inset-0 p-3 flex flex-col gap-1.5 opacity-90">
+                <div class="h-2 w-14 rounded-full" style="background:{t.swatch.accent};opacity:.85"></div>
+                <div class="h-1.5 w-full rounded-full bg-current opacity-15"></div>
+                <div class="h-1.5 w-11/12 rounded-full bg-current opacity-15"></div>
+                <div class="h-1.5 w-full rounded-full bg-current opacity-15"></div>
+                <div class="h-1.5 w-4/5 rounded-full bg-current opacity-15"></div>
+                <div class="h-1.5 w-3/5 rounded-full bg-current opacity-10"></div>
+                <div class="mt-auto font-hand text-lg leading-none truncate" style="color:{t.swatch.accent}">
+                  Dear diary…
+                </div>
+              </div>
+              {#if chosenTemplate === t.id}
+                <div class="absolute top-2 right-2 w-6 h-6 rounded-full grid place-items-center text-xs font-bold text-white" style="background:#7c3aed">✓</div>
+              {/if}
+            </div>
+            <div class="font-display font-semibold text-sm" style="color:{chosenTemplate === t.id ? '#fff' : 'inherit'}">{t.name}</div>
+            <div class="text-xs text-[var(--color-ink-faint)] leading-snug mt-0.5">{t.desc}</div>
+          </button>
+        {/each}
+      </div>
+
+      <footer class="flex flex-col sm:flex-row gap-3 px-7 py-5 border-t border-white/10 shrink-0">
+        <p class="text-xs text-[var(--color-ink-faint)] sm:flex-1 self-center leading-relaxed">
+          Downloads as a beautiful HTML keepsake — open it and hit “Save as PDF” to print.
+        </p>
+        <button class="btn-ghost px-6 py-3 text-sm" onclick={printView}>🖨 Preview & print</button>
+        <button class="btn-primary px-7 py-3 text-sm" onclick={download}>⬇ Download</button>
+      </footer>
+    </div>
+  </div>
+{/if}

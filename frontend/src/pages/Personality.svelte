@@ -1,202 +1,149 @@
 <script>
+  import Logo from '../lib/components/Logo.svelte';
   import { api } from '../lib/api.js';
-  import { getAuth } from '../lib/stores.svelte.js';
-  import { navigate } from '../lib/router.svelte.js';
+  import { toast } from '../lib/stores.svelte.js';
 
-  const auth = getAuth();
-
-  $effect(() => {
-    if (!auth.isAuthenticated) navigate('/login');
-  });
-
-  let userName = $state('user');
-  let sassiness = $state(2);
-  let warmth = $state(2);
-  let banter = $state(2);
-  let directness = $state(2);
-  let verbosity = $state(2);
-  let emoji = $state(2);
+  let userName = $state('');
+  let sliders = $state([
+    { key: 'warmth', label: 'Warmth', icon: '🫂', desc: 'How tender and caring Daisy feels', value: 2 },
+    { key: 'sassiness', label: 'Sassiness', icon: '💅', desc: 'A little attitude goes a long way', value: 2 },
+    { key: 'banter', label: 'Banter', icon: '😄', desc: 'Playful teasing and jokes', value: 2 },
+    { key: 'directness', label: 'Directness', icon: '🎯', desc: 'Straight talk vs gentle hints', value: 2 },
+    { key: 'verbosity', label: 'Verbosity', icon: '💬', desc: 'Short and snappy, or rich and detailed', value: 2 },
+    { key: 'emoji', label: 'Emoji', icon: '✨', desc: 'How much Daisy decorates her texts', value: 2 },
+  ]);
   let customPrompt = $state('');
-  let loading = $state(false);
-  let saved = $state(false);
-  let error = $state('');
+  let saving = $state(false);
+  let savedFlash = $state(false);
 
-  const traits = [
-    { key: 'sassiness', label: 'Sassiness', icon: '😏', desc: 'How much attitude she gives you', left: 'Chill', right: 'Savage' },
-    { key: 'warmth', label: 'Warmth', icon: '🥰', desc: 'How caring and affectionate she is', left: 'Reserved', right: 'Toasty' },
-    { key: 'banter', label: 'Banter', icon: '😂', desc: 'How much she jokes around', left: 'Serious', right: 'Comedian' },
-    { key: 'directness', label: 'Directness', icon: '🎯', desc: 'How blunt she is with you', left: 'Gentle', right: 'Brutal honesty' },
-    { key: 'verbosity', label: 'Verbosity', icon: '📝', desc: 'How much she talks', left: 'Short & sweet', right: 'Novelist' },
-    { key: 'emoji', label: 'Emoji Usage', icon: '✨', desc: 'How many emojis she uses', left: 'No emojis', right: '🎉🥳✨💯🔥' },
-  ];
+  const LEVELS = ['Low', 'Medium', 'High'];
 
-  function getTraitValue(key) {
-    if (key === 'sassiness') return sassiness;
-    if (key === 'warmth') return warmth;
-    if (key === 'banter') return banter;
-    if (key === 'directness') return directness;
-    if (key === 'verbosity') return verbosity;
-    return emoji;
+  function tonePreview() {
+    const get = (k) => sliders.find((s) => s.key === k).value;
+    let t = '';
+    if (get('warmth') === 3) t = "Oh sweetheart, I've been thinking about you — ";
+    else if (get('warmth') === 1) t = "Hey. ";
+    else t = "Hey you. ";
+
+    if (get('banter') === 3) t += "don't think I didn't notice you went quiet on me again 😏 ";
+    else if (get('banter') >= 2) t += "look who decided to show up ";
+
+    if (get('directness') === 3) t += "you should just talk to them. Today. ";
+    else if (get('directness') === 1) t += "maybe sleeping on it could help? only if you want though ";
+    else t += "honestly, talking to them might be the move. ";
+
+    if (get('verbosity') === 1) return t.trim();
+    if (get('verbosity') === 3) {
+      t += "And listen — whatever happens, I'll be right here. We can figure out exactly what you want to say together, word by word if you need. ";
+    } else {
+      t += "I'm here either way. ";
+    }
+    return t + (get('emoji') === 3 ? '💜✨🌼' : get('emoji') === 2 ? ' 💜' : '');
   }
 
-  function setTraitValue(key, val) {
-    if (key === 'sassiness') sassiness = val;
-    else if (key === 'warmth') warmth = val;
-    else if (key === 'banter') banter = val;
-    else if (key === 'directness') directness = val;
-    else if (key === 'verbosity') verbosity = val;
-    else emoji = val;
-  }
-
-  async function handleSave() {
-    loading = true;
-    error = '';
+  async function save() {
+    saving = true;
     try {
       await api.updatePersonality({
-        user_name: userName || 'user',
-        sassiness,
-        warmth,
-        banter,
-        directness,
-        verbosity,
-        emoji,
-        custom_prompt: customPrompt || null,
+        user_name: userName || undefined,
+        ...Object.fromEntries(sliders.map((s) => [s.key, s.value])),
+        custom_prompt: customPrompt || undefined,
       });
-      saved = true;
-      setTimeout(() => saved = false, 3000);
-    } catch (e) {
-      error = e.error || 'Failed to save';
+      savedFlash = true;
+      setTimeout(() => (savedFlash = false), 2200);
+      toast("Daisy's personality updated ✨", 'success');
+    } catch (err) {
+      toast(err?.error || 'Could not save personality', 'error');
     } finally {
-      loading = false;
+      saving = false;
     }
   }
-
-  const levelLabels = ['Low', 'Medium', 'High'];
 </script>
 
-<div class="min-h-screen pt-24 pb-16 px-4">
-  <div class="max-w-2xl mx-auto">
-    <!-- Header -->
-    <div class="text-center mb-10 animate-slide-up">
-      <div class="w-14 h-14 rounded-2xl bg-gradient-to-br from-primary to-accent mx-auto flex items-center justify-center text-white text-2xl mb-4 animate-float">
-        🎨
-      </div>
-      <h1 class="text-3xl font-bold text-white mb-2">Customize Daisy</h1>
-      <p class="text-white/50 text-sm">Adjust her personality to match your vibe</p>
-    </div>
+<div class="max-w-5xl mx-auto px-6 py-12">
+  <header class="text-center mb-12 animate-rise">
+    <div class="flex justify-center mb-4"><Logo size={56} /></div>
+    <h1 class="font-display text-3xl md:text-4xl font-bold tracking-tight">
+      Tune <span class="text-gradient">your Daisy</span>
+    </h1>
+    <p class="mt-3 text-[var(--color-ink-dim)] max-w-lg mx-auto leading-relaxed">
+      Shape how she talks to you. Change it anytime — she adapts instantly.
+    </p>
+  </header>
 
-    {#if error}
-      <div class="mb-4 px-4 py-3 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 text-sm animate-slide-up">
-        {error}
-      </div>
-    {/if}
-
-    {#if saved}
-      <div class="mb-4 px-4 py-3 rounded-xl bg-green-500/10 border border-green-500/20 text-green-400 text-sm animate-slide-up flex items-center gap-2">
-        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
-        Personality saved!
-      </div>
-    {/if}
-
-    <div class="space-y-4">
-      <!-- Name -->
-      <div class="glass p-6 rounded-2xl animate-slide-up" style="animation-delay: 0.1s;">
-        <label class="block text-sm text-white/60 mb-2">What should she call you?</label>
-        <input
-          type="text"
-          bind:value={userName}
-          placeholder="Your name"
-          class="w-full px-4 py-3 rounded-xl bg-surface-lighter border border-glass-border text-white placeholder-white/30 text-sm transition-all duration-300"
-        />
+  <div class="grid lg:grid-cols-5 gap-8 items-start">
+    <!-- Sliders -->
+    <div class="lg:col-span-3 glass rounded-3xl p-7 space-y-7 animate-rise">
+      <div>
+        <label class="block text-sm font-medium mb-2 text-[var(--color-ink-dim)]" for="daisy-name">What should she call you?</label>
+        <input id="daisy-name" type="text" class="input-field" placeholder="Your name or nickname" bind:value={userName} maxlength="50" />
       </div>
 
-      <!-- Trait sliders -->
-      {#each traits as trait, i}
-        {@const val = getTraitValue(trait.key)}
-        {@const pct = ((val - 1) / 2) * 100}
-        <div class="glass p-6 rounded-2xl animate-slide-up" style="animation-delay: {0.05 * (i + 2)}s;">
-          <div class="flex items-center gap-2 mb-1">
-            <span class="text-xl">{trait.icon}</span>
-            <h3 class="text-sm font-semibold text-white">{trait.label}</h3>
+      {#each sliders as s, i}
+        <div>
+          <div class="flex items-baseline justify-between mb-1.5">
+            <label class="font-medium text-[15px]" for={`slider-${s.key}`}>{s.icon} {s.label}</label>
+            <span
+              class="text-xs font-semibold px-2.5 py-0.5 rounded-full transition-colors"
+              style="background:rgba(139,92,246,{0.15 + s.value * 0.1});color:#d6c9ff"
+            >
+              {LEVELS[s.value - 1]}
+            </span>
           </div>
-          <p class="text-xs text-white/40 mb-4">{trait.desc}</p>
-
-          <div class="relative">
-            <input
-              type="range"
-              min="1"
-              max="3"
-              step="1"
-              value={val}
-              oninput={(e) => setTraitValue(trait.key, parseInt(e.target.value))}
-              class="w-full h-2 rounded-full appearance-none cursor-pointer"
-              style="background: linear-gradient(to right, rgba(124,58,237,0.3) 0%, rgba(124,58,237,0.3) {pct}%, rgba(37,29,64,1) {pct}%, rgba(37,29,64,1) 100%);"
-            />
-            <div class="flex justify-between mt-2 text-[10px] text-white/30">
-              <span>{trait.left}</span>
-              <span class="text-primary-light font-medium text-xs">
-                {levelLabels[val - 1]}
-              </span>
-              <span>{trait.right}</span>
-            </div>
+          <p class="text-xs text-[var(--color-ink-faint)] mb-2.5">{s.desc}</p>
+          <input
+            id={`slider-${s.key}`}
+            type="range"
+            min="1"
+            max="3"
+            step="1"
+            bind:value={s.value}
+            class="w-full accent-[#a78bfa] cursor-pointer h-1.5"
+            aria-label={s.label}
+          />
+          <div class="flex justify-between text-[10px] uppercase tracking-widest text-[var(--color-ink-faint)] mt-1">
+            <span>Low</span><span>Medium</span><span>High</span>
           </div>
         </div>
       {/each}
 
-      <!-- Custom prompt -->
-      <div class="glass p-6 rounded-2xl animate-slide-up" style="animation-delay: 0.4s;">
-        <label class="block text-sm text-white/60 mb-2">Custom instruction (optional)</label>
-        <p class="text-xs text-white/30 mb-3">Tell Daisy anything special about how you want her to behave</p>
+      <div>
+        <label class="block text-sm font-medium mb-2 text-[var(--color-ink-dim)]" for="custom-prompt">
+          Anything else? <span class="text-[var(--color-ink-faint)] font-normal">(optional)</span>
+        </label>
         <textarea
+          id="custom-prompt"
+          class="input-field resize-none min-h-24"
+          placeholder='e.g. "Call me by my middle name" · "Never mention mornings" · "Talk like a pirate on Fridays"'
           bind:value={customPrompt}
-          placeholder="e.g. Never mention politics. Use Gen-Z slang sometimes."
-          rows="3"
-          class="w-full px-4 py-3 rounded-xl bg-surface-lighter border border-glass-border text-white placeholder-white/30 text-sm resize-none transition-all duration-300"
         ></textarea>
       </div>
 
-      <!-- Save button -->
-      <div class="pt-2 animate-slide-up" style="animation-delay: 0.5s;">
-        <button
-          onclick={handleSave}
-          disabled={loading}
-          class="w-full py-3.5 rounded-xl bg-gradient-to-r from-primary to-accent text-white font-semibold btn-glow hover:scale-[1.02] transition-all duration-300 disabled:opacity-50"
-        >
-          {#if loading}
-            Saving...
-          {:else if saved}
-            ✓ Saved!
-          {:else}
-            Save Personality
-          {/if}
-        </button>
+      <button class="btn-primary w-full py-3.5" onclick={save} disabled={saving}>
+        {#if saving}
+          Saving…
+        {:else if savedFlash}
+          ✓ Saved — Daisy is adjusting…
+        {:else}
+          Save personality
+        {/if}
+      </button>
+    </div>
+
+    <!-- Live preview -->
+    <div class="lg:col-span-2 lg:sticky lg:top-24 animate-rise" style="animation-delay:.15s">
+      <div class="glass glow-ring rounded-3xl p-6">
+        <h2 class="font-display font-semibold mb-4 flex items-center gap-2">
+          <Logo size={26} /> Live preview
+        </h2>
+        <div class="glass rounded-2xl rounded-tl-md px-4 py-4 text-[15px] leading-relaxed min-h-32">
+          "{tonePreview()}"
+        </div>
+        <p class="text-xs text-[var(--color-ink-faint)] mt-4 leading-relaxed">
+          Move the sliders and watch Daisy's voice change in real time.
+        </p>
+        <a href="#/chat" class="btn-primary w-full py-3 mt-5 inline-flex">Go chat with her →</a>
       </div>
     </div>
   </div>
 </div>
-
-<style>
-  input[type="range"]::-webkit-slider-thumb {
-    appearance: none;
-    width: 22px;
-    height: 22px;
-    border-radius: 50%;
-    background: linear-gradient(135deg, #7c3aed, #f472b6);
-    cursor: pointer;
-    border: 2px solid #0f0a1a;
-    box-shadow: 0 0 10px rgba(124, 58, 237, 0.5);
-    transition: transform 0.2s;
-  }
-  input[type="range"]::-webkit-slider-thumb:hover {
-    transform: scale(1.2);
-  }
-  input[type="range"]::-moz-range-thumb {
-    width: 22px;
-    height: 22px;
-    border-radius: 50%;
-    background: linear-gradient(135deg, #7c3aed, #f472b6);
-    cursor: pointer;
-    border: 2px solid #0f0a1a;
-    box-shadow: 0 0 10px rgba(124, 58, 237, 0.5);
-  }
-</style>

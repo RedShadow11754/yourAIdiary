@@ -1,168 +1,136 @@
 <script>
   import { api } from '../lib/api.js';
-  import { getAuth } from '../lib/stores.svelte.js';
-  import { navigate } from '../lib/router.svelte.js';
-
-  const auth = getAuth();
-
-  $effect(() => {
-    if (!auth.isAuthenticated) navigate('/login');
-  });
+  import { toast } from '../lib/stores.svelte.js';
+  import MoodBadge from '../lib/components/MoodBadge.svelte';
+  import Logo from '../lib/components/Logo.svelte';
 
   let entries = $state([]);
   let loading = $state(true);
+  let filter = $state('all');
+  let query = $state('');
 
-  $effect(() => {
-    if (auth.isAuthenticated) loadEntries();
-  });
+  const FILTERS = ['all', 'happy', 'excited', 'grateful', 'peaceful', 'hopeful', 'sad', 'anxious'];
 
-  async function loadEntries() {
-    loading = true;
-    try {
-      entries = await api.getDiaryEntries();
-    } catch (e) {
-      console.error('Failed to load diary', e);
-    } finally {
-      loading = false;
-    }
-  }
-
-  const moodEmojis = {
-    happy: '😊', sad: '😢', angry: '😤', anxious: '😰', excited: '🤩',
-    lonely: '😔', peaceful: '😌', confused: '😵‍💫', grateful: '🙏', numb: '😶',
-    hopeful: '🌟', frustrated: '😤', melancholic: '🥀', content: '☺️',
-    overwhelmed: '🤯', other: '📝',
-  };
-
-  function formatDate(d) {
-    return new Date(d + 'T00:00:00').toLocaleDateString('en-US', {
-      weekday: 'long', month: 'long', day: 'numeric', year: 'numeric',
+  function fmtDate(dateStr) {
+    return new Date(dateStr + 'T12:00:00').toLocaleDateString('en-US', {
+      weekday: 'short', month: 'short', day: 'numeric',
     });
   }
 
-  let downloading = $state(false);
-
-  async function downloadAllDiary() {
-    if (entries.length === 0) return;
-    downloading = true;
-    try {
-      // Fetch full content for every entry
-      const fullEntries = [];
-      for (const e of entries) {
-        try {
-          const full = await api.getDiaryEntry(e.id);
-          fullEntries.push(full);
-        } catch {
-          fullEntries.push(e); // fallback to preview
-        }
-      }
-
-      let text = '═══════════════════════════════════════\n';
-      text += '           MY DIARY\n';
-      text += '═══════════════════════════════════════\n\n';
-
-      for (const e of fullEntries) {
-        const emoji = moodEmojis[e.mood] || '📝';
-        text += `${emoji} ${formatDate(e.date)} — ${e.mood}\n`;
-        text += '───────────────────────────────────────\n';
-        text += `${e.content}\n`;
-        if (e.narrative_thread) {
-          text += `\n  Narrative: ${e.narrative_thread}\n`;
-        }
-        text += '\n\n';
-      }
-
-      text += '═══════════════════════════════════════\n';
-      text += `  Exported on ${new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}\n`;
-      text += '═══════════════════════════════════════\n';
-
-      const blob = new Blob([text], { type: 'text/plain;charset=utf-8' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `diary-${new Date().toISOString().slice(0, 10)}.txt`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-    } catch (e) {
-      console.error('Download failed', e);
-    } finally {
-      downloading = false;
-    }
+  function excerpt(text, n = 130) {
+    return text.length > n ? text.slice(0, n).trimEnd() + '…' : text;
   }
+
+  let filtered = $derived(
+    entries.filter(
+      (e) =>
+        (filter === 'all' || e.mood === filter) &&
+        (!query || e.content.toLowerCase().includes(query.toLowerCase()))
+    )
+  );
+
+  let streak = $derived.by(() => {
+    if (entries.length < 2) return entries.length;
+    let s = 1;
+    for (let i = 1; i < entries.length; i++) {
+      const prev = new Date(entries[i - 1].date + 'T12:00:00');
+      const cur = new Date(entries[i].date + 'T12:00:00');
+      if ((prev - cur) / 86400000 === 1) s++;
+      else break;
+    }
+    return s;
+  });
+
+  $effect(() => {
+    api
+      .getDiaryEntries()
+      .then((data) => (entries = Array.isArray(data) ? data : []))
+      .catch(() => toast('Could not load diary', 'error'))
+      .finally(() => (loading = false));
+  });
 </script>
 
-<div class="min-h-screen pt-24 pb-16 px-4">
-  <div class="max-w-3xl mx-auto">
-    <!-- Header -->
-    <div class="text-center mb-10 animate-slide-up">
-      <div class="w-14 h-14 rounded-2xl bg-gradient-to-br from-primary to-accent mx-auto flex items-center justify-center text-white text-2xl mb-4 animate-float">
-        📖
-      </div>
-      <h1 class="text-3xl font-bold text-white mb-2">Your Diary</h1>
-      <p class="text-white/50 text-sm">Automatically written in your voice, every day</p>
-      {#if entries.length > 0}
-        <button
-          onclick={downloadAllDiary}
-          disabled={downloading}
-          class="mt-4 inline-flex items-center gap-2 px-5 py-2.5 rounded-xl border border-glass-border text-sm text-white/60 hover:text-white hover:border-primary/50 hover:bg-primary/5 transition-all duration-300 disabled:opacity-50"
-        >
-          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
-          {downloading ? 'Exporting...' : 'Download Entire Diary'}
-        </button>
-      {/if}
-    </div>
+<div class="max-w-5xl mx-auto px-6 py-12">
+  <header class="mb-10 animate-rise">
+    <p class="text-sm tracking-[0.3em] uppercase text-[var(--color-primary-300)] font-medium mb-2">Your story</p>
+    <h1 class="font-display text-3xl md:text-4xl font-bold tracking-tight">
+      The <span class="text-gradient-warm">Diary</span> 📖
+    </h1>
 
-    {#if loading}
-      <div class="space-y-4">
-        {#each [1,2,3] as _}
-          <div class="glass p-6 rounded-2xl animate-shimmer">
-            <div class="h-4 bg-white/5 rounded w-1/3 mb-3"></div>
-            <div class="h-3 bg-white/5 rounded w-2/3 mb-2"></div>
-            <div class="h-3 bg-white/5 rounded w-1/2"></div>
-          </div>
-        {/each}
-      </div>
-    {:else if entries.length === 0}
-      <div class="text-center py-20 animate-fade">
-        <div class="text-6xl mb-4">📝</div>
-        <h3 class="text-xl font-semibold text-white mb-2">No entries yet</h3>
-        <p class="text-white/40 max-w-sm mx-auto">Daisy will write your first diary entry after you have a meaningful conversation with her.</p>
-      </div>
-    {:else}
-      <div class="space-y-4">
-        {#each entries as entry, i}
-          <a
-            href="#/diary/{entry.id}"
-            class="block glass p-6 rounded-2xl glass-hover animate-slide-up cursor-pointer"
-            style="animation-delay: {Math.min(i * 0.08, 0.5)}s;"
-          >
-            <div class="flex items-start justify-between gap-4">
-              <div class="flex-1 min-w-0">
-                <div class="flex items-center gap-2 mb-2">
-                  <span class="text-lg">{moodEmojis[entry.mood] || '📝'}</span>
-                  <span class="text-xs px-2 py-0.5 rounded-full bg-primary/15 text-primary-light capitalize">
-                    {entry.mood}
-                  </span>
-                  {#if entry.is_edited}
-                    <span class="text-xs px-2 py-0.5 rounded-full bg-accent/15 text-accent-light">
-                      ✏️ Edited
-                    </span>
-                  {/if}
-                </div>
-                <p class="text-sm text-white/50 mb-1">{formatDate(entry.date)}</p>
-                <p class="text-sm text-white/70 line-clamp-2 leading-relaxed">
-                  {entry.content?.substring(0, 200)}{entry.content?.length > 200 ? '...' : ''}
-                </p>
-              </div>
-              <svg class="w-5 h-5 text-white/20 shrink-0 mt-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
-              </svg>
-            </div>
-          </a>
-        {/each}
+    {#if !loading && entries.length > 0}
+      <div class="flex flex-wrap gap-3 mt-6">
+        <div class="glass rounded-2xl px-5 py-3">
+          <div class="font-display text-2xl font-bold">{entries.length}</div>
+          <div class="text-xs text-[var(--color-ink-dim)]">entries written</div>
+        </div>
+        <div class="glass rounded-2xl px-5 py-3">
+          <div class="font-display text-2xl font-bold">🔥 {streak}</div>
+          <div class="text-xs text-[var(--color-ink-dim)]">day streak</div>
+        </div>
+        <input
+          type="search"
+          class="input-field flex-1 min-w-48 self-stretch"
+          placeholder="Search your memories…"
+          bind:value={query}
+        />
       </div>
     {/if}
-  </div>
+  </header>
+
+  <!-- Mood filters -->
+  {#if !loading && entries.length > 0}
+    <div class="flex gap-2 overflow-x-auto no-scrollbar pb-2 mb-8 animate-fade">
+      {#each FILTERS as f}
+        <button
+          onclick={() => (filter = f)}
+          class="px-4 py-2 rounded-full text-sm whitespace-nowrap transition-all duration-200 cursor-pointer capitalize
+            {filter === f ? 'btn-primary !py-2' : 'glass hover:border-[rgba(196,181,253,.45)]'}"
+        >
+          {f === 'all' ? '✦ All moods' : f}
+        </button>
+      {/each}
+    </div>
+  {/if}
+
+  {#if loading}
+    <div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-5">
+      {#each [1, 2, 3, 4, 5, 6] as i}
+        <div class="glass rounded-3xl h-56 animate-pulse"></div>
+      {/each}
+    </div>
+  {:else if entries.length === 0}
+    <div class="text-center py-24 animate-rise">
+      <Logo size={72} />
+      <h2 class="font-display text-2xl font-bold mt-6">Your diary is waiting to be born</h2>
+      <p class="text-[var(--color-ink-dim)] max-w-md mx-auto mt-3 leading-relaxed">
+        Chat with Daisy today — tomorrow morning, your first entry will be here,
+        written and ready to keep forever.
+      </p>
+      <a href="#/chat" class="btn-primary px-8 py-3.5 mt-8 inline-flex">Start chatting →</a>
+    </div>
+  {:else if filtered.length === 0}
+    <p class="text-center text-[var(--color-ink-dim)] py-20">No entries match that filter. Try another mood ✨</p>
+  {:else}
+    <div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-5 stagger">
+      {#each filtered as e (e.id)}
+        <a href={`#/diary/${e.id}`} class="group block glass card-hover rounded-3xl p-6 relative overflow-hidden">
+          <div
+            class="absolute inset-x-0 top-0 h-1 opacity-70"
+            style="background:linear-gradient(90deg,#7c3aed,#d946ef,#22d3ee)"
+          ></div>
+          <div class="flex items-center justify-between mb-3">
+            <span class="text-xs text-[var(--color-ink-faint)] uppercase tracking-wider">{fmtDate(e.date)}</span>
+            {#if e.is_edited}<span title="edited" class="text-xs">✏️</span>{/if}
+          </div>
+          <MoodBadge mood={e.mood} />
+          <p class="mt-4 text-sm leading-relaxed text-[var(--color-ink-dim)] group-hover:text-[var(--color-ink)] transition-colors">
+            {excerpt(e.content)}
+          </p>
+          <span class="inline-flex items-center gap-1.5 text-xs text-[var(--color-primary-300)] mt-4 opacity-0 group-hover:opacity-100 transition-opacity">
+            Read & download →
+          </span>
+        </a>
+      {/each}
+    </div>
+  {/if}
 </div>

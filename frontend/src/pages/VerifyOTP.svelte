@@ -1,127 +1,149 @@
 <script>
+  import Logo from '../lib/components/Logo.svelte';
   import { api } from '../lib/api.js';
-  import { setAuth } from '../lib/stores.svelte.js';
+  import { setAuth, toast } from '../lib/stores.svelte.js';
   import { navigate } from '../lib/router.svelte.js';
 
-  let email = $state(localStorage.getItem('pending_email') || '');
-  let code = $state('');
+  let email = $state(sessionStorage.getItem('pending_email') || '');
+  let manualEmail = $state(false);
+  let digits = $state(['', '', '', '', '', '']);
   let loading = $state(false);
-  let error = $state('');
-  let success = $state('');
-  let resendTimer = $state(60);
-  let canResend = $state(false);
+  let resendIn = $state(0);
 
-  // Countdown timer
+  let code = $derived(digits.join(''));
+
+  const boxes = [];
+
+  if (!manualEmail && !email) manualEmail = true;
+
+  // Resend countdown
   $effect(() => {
-    if (resendTimer > 0) {
-      const interval = setInterval(() => {
-        resendTimer--;
-        if (resendTimer <= 0) canResend = true;
-      }, 1000);
-      return () => clearInterval(interval);
-    }
+    if (resendIn <= 0) return;
+    const t = setTimeout(() => resendIn--, 1000);
+    return () => clearTimeout(t);
   });
 
-  async function handleVerify() {
-    if (!code || code.length !== 6) { error = 'Please enter the 6-digit code'; return; }
+  function onInput(i, e) {
+    const v = e.target.value.replace(/\D/g, '').slice(-1);
+    digits[i] = v;
+    digits = [...digits];
+    if (v && i < 5) boxes[i + 1]?.focus();
+    if (code.length === 6 && !code.includes('')) verify();
+  }
+
+  function onKeydown(i, e) {
+    if (e.key === 'Backspace' && !digits[i] && i > 0) {
+      boxes[i - 1]?.focus();
+    }
+  }
+
+  function onPaste(e) {
+    e.preventDefault();
+    const text = (e.clipboardData?.getData('text') || '').replace(/\D/g, '').slice(0, 6);
+    if (!text) return;
+    for (let i = 0; i < 6; i++) digits[i] = text[i] || '';
+    digits = [...digits];
+    boxes[Math.min(text.length, 5)]?.focus();
+    if (text.length === 6) verify();
+  }
+
+  async function verify() {
+    if (loading || code.length !== 6 || code.includes('')) return;
     loading = true;
-    error = '';
     try {
-      const data = await api.verifyOtp({ email, code });
-      setAuth(
-        { email: data.email },
-        { access: data.access, refresh: data.refresh }
-      );
-      localStorage.removeItem('pending_email');
+      const res = await api.verifyOtp({ email, code });
+      setAuth({ email: res.email, username: res.email }, { access: res.access, refresh: res.refresh });
+      sessionStorage.removeItem('pending_email');
+      sessionStorage.setItem('daisy_welcome', 'new');
+      toast('Verified! Daisy can\'t wait to meet you 🌼', 'success');
       navigate('/chat');
-    } catch (e) {
-      error = e.error || 'Verification failed';
+    } catch (err) {
+      toast(err.error || 'Invalid or expired code', 'error');
+      digits = ['', '', '', '', '', ''];
+      boxes[0]?.focus();
     } finally {
       loading = false;
     }
   }
 
-  async function handleResend() {
+  async function resend() {
+    if (resendIn > 0 || !email) return;
     try {
       await api.resendOtp({ email });
-      success = 'New code sent! Check your email.';
-      resendTimer = 60;
-      canResend = false;
-      error = '';
-    } catch (e) {
-      error = e.error || 'Failed to resend code';
+      resendIn = 45;
+      toast('New code sent ✈️', 'success');
+    } catch (err) {
+      toast(err.error || 'Could not resend code', 'error');
     }
-  }
-
-  function handleKeydown(e) {
-    if (e.key === 'Enter' && code.length === 6) handleVerify();
   }
 </script>
 
-<div class="min-h-screen flex items-center justify-center px-4 pt-20">
-  <div class="w-full max-w-md animate-scale">
-    <div class="glass p-8 rounded-3xl">
-      <div class="text-center mb-8">
-        <div class="w-14 h-14 rounded-2xl bg-gradient-to-br from-primary to-accent mx-auto flex items-center justify-center text-white text-2xl mb-4">
-          📧
-        </div>
-        <h1 class="text-2xl font-bold text-white">Verify your email</h1>
-        <p class="text-white/50 text-sm mt-2">
-          We sent a 6-digit code to<br/>
-          <span class="text-primary-light">{email}</span>
-        </p>
-      </div>
-
-      {#if error}
-        <div class="mb-4 px-4 py-3 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 text-sm animate-slide-up">
-          {error}
-        </div>
-      {/if}
-
-      {#if success}
-        <div class="mb-4 px-4 py-3 rounded-xl bg-green-500/10 border border-green-500/20 text-green-400 text-sm animate-slide-up">
-          {success}
-        </div>
-      {/if}
-
-      <div class="mb-6">
-        <label class="block text-sm text-white/60 mb-2 text-center">Verification Code</label>
-        <input
-          type="text"
-          bind:value={code}
-          onkeydown={handleKeydown}
-          maxlength="6"
-          placeholder="000000"
-          class="w-full px-4 py-4 rounded-xl bg-surface-lighter border border-glass-border text-white text-center text-2xl tracking-[0.5em] placeholder-white/20 font-mono transition-all duration-300"
-        />
-      </div>
-
-      <button
-        onclick={handleVerify}
-        disabled={loading || code.length !== 6}
-        class="w-full py-3 rounded-xl bg-gradient-to-r from-primary to-accent text-white font-semibold btn-glow hover:scale-[1.02] transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed"
-      >
-        {#if loading}
-          <span class="flex items-center justify-center gap-2">
-            <svg class="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>
-            Verifying...
-          </span>
-        {:else}
-          Verify Code
-        {/if}
-      </button>
-
-      <div class="text-center mt-6">
-        {#if canResend}
-          <button onclick={handleResend} class="text-sm text-primary-light hover:text-primary transition-colors">
-            Resend code
-          </button>
-        {:else}
-          <p class="text-sm text-white/30">
-            Resend code in {resendTimer}s
-          </p>
-        {/if}
+<div class="min-h-[calc(100vh-4rem)] flex items-center justify-center px-6 py-16">
+  <div class="w-full max-w-md text-center animate-rise">
+    <div class="flex justify-center mb-6">
+      <div class="relative">
+        <span class="absolute inset-0 rounded-full animate-breathe" style="background:radial-gradient(circle,rgba(168,85,247,.5),transparent 70%);filter:blur(14px)"></span>
+        <Logo size={72} glow={false} />
       </div>
     </div>
+
+    <h1 class="font-display text-3xl font-bold tracking-tight">Check your inbox</h1>
+    <p class="mt-3 text-[var(--color-ink-dim)]">
+      {#if manualEmail}
+        Enter your email and the 6-digit code we sent you.
+      {:else}
+        We sent a 6-digit code to
+        <button class="text-[var(--color-primary-300)] font-medium underline underline-offset-4 cursor-pointer" onclick={() => (manualEmail = true)}>
+          {email}
+        </button>
+      {/if}
+    </p>
+
+    {#if manualEmail}
+      <input type="email" class="input-field mt-6 text-center" placeholder="you@anywhere.com" bind:value={email} />
+    {/if}
+
+    <!-- OTP boxes -->
+    <div class="flex gap-2.5 justify-center mt-8" onpaste={onPaste}>
+      {#each [0, 1, 2, 3, 4, 5] as i}
+        <input
+          bind:this={boxes[i]}
+          type="text"
+          inputmode="numeric"
+          maxlength="2"
+          value={digits[i]}
+          oninput={(e) => onInput(i, e)}
+          onkeydown={(e) => onKeydown(i, e)}
+          class="w-12 h-15 sm:w-14 sm:h-16 rounded-2xl glass-strong text-center font-display text-2xl font-bold transition-all duration-200
+            {digits[i] ? 'border-[var(--color-primary-400)] shadow-[0_0_20px_-4px_rgba(139,92,246,.7)]' : ''}"
+          style="padding-top:4px;"
+          aria-label="Digit {i + 1}"
+        />
+      {/each}
+    </div>
+
+    {#if loading}
+      <div class="flex items-center justify-center gap-1.5 mt-8">
+        <span class="typing-dot"></span><span class="typing-dot"></span><span class="typing-dot"></span>
+        <span class="ml-2 text-sm text-[var(--color-ink-dim)]">Verifying…</span>
+      </div>
+    {:else}
+      <button
+        class="btn-primary w-full py-3.5 mt-8"
+        disabled={code.length !== 6 || code.includes('')}
+        onclick={verify}
+      >
+        Verify & enter
+      </button>
+    {/if}
+
+    <p class="mt-6 text-sm text-[var(--color-ink-faint)]">
+      Didn't get it?
+      {#if resendIn > 0}
+        <span>Resend in {resendIn}s</span>
+      {:else}
+        <button class="text-[var(--color-primary-300)] hover:text-white font-medium cursor-pointer" onclick={resend}>Resend code</button>
+      {/if}
+    </p>
   </div>
 </div>

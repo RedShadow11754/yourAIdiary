@@ -1,8 +1,9 @@
 <script>
   import { initAuth, getAuth } from './lib/stores.svelte.js';
   import { getRouter } from './lib/router.svelte.js';
-  import Particles from './lib/Particles.svelte';
-  import Navbar from './lib/Navbar.svelte';
+  import Background from './lib/components/Background.svelte';
+  import Navbar from './lib/components/Navbar.svelte';
+  import Toast from './lib/components/Toast.svelte';
 
   import Home from './pages/Home.svelte';
   import Login from './pages/Login.svelte';
@@ -16,6 +17,7 @@
   initAuth();
 
   const router = getRouter();
+  const auth = getAuth();
 
   let CurrentPage = $derived.by(() => {
     const route = router.currentRoute;
@@ -30,15 +32,26 @@
     return Home;
   });
 
-  // Key for forcing remount on route change
-  let routeKey = $derived(router.currentRoute);
+  // Route guards: authed users skip auth pages; guests skip app pages
+  $effect(() => {
+    const route = router.currentRoute;
+    const isAuthPage = ['/login', '/register', '/verify-otp'].includes(route);
+    if (auth.isAuthenticated && isAuthPage) {
+      window.location.hash = '#/chat';
+    }
+    if (!auth.isAuthenticated && !isAuthPage && route !== '/' && route !== '') {
+      window.location.hash = '#/login';
+    }
+  });
 </script>
 
-<Particles />
-<Navbar />
+<Background />
+<Navbar route={router.currentRoute} />
 
-{#key routeKey}
-  <div class="relative z-10">
+{#key router.currentRoute}
+  <main class="relative z-10 min-h-[calc(100vh-4rem)]">
     <svelte:component this={CurrentPage} />
-  </div>
+  </main>
 {/key}
+
+<Toast />

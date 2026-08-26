@@ -1,133 +1,137 @@
 <script>
+  import Logo from '../lib/components/Logo.svelte';
   import { api } from '../lib/api.js';
-  import { setAuth, getAuth } from '../lib/stores.svelte.js';
+  import { setAuth, toast } from '../lib/stores.svelte.js';
   import { navigate } from '../lib/router.svelte.js';
-
-  const auth = getAuth();
-
-  // Redirect if already logged in
-  $effect(() => {
-    if (auth.isAuthenticated) navigate('/chat');
-  });
 
   let email = $state('');
   let password = $state('');
   let loading = $state(false);
-  let error = $state('');
+  let googleLoading = $state(false);
+  let showPassword = $state(false);
 
-  async function handleLogin() {
-    if (!email || !password) { error = 'Please fill in all fields'; return; }
+  async function handleLogin(e) {
+    e.preventDefault();
+    if (!email || !password) return;
     loading = true;
-    error = '';
     try {
-      const data = await api.login({ email: email.toLowerCase().trim(), password });
-      setAuth({ email: data.email }, { access: data.access, refresh: data.refresh });
+      const res = await api.login({ email, password });
+      setAuth({ email: res.email, username: res.email }, { access: res.access, refresh: res.refresh });
+      toast(`Welcome back! Daisy missed you 🌼`, 'success');
       navigate('/chat');
-    } catch (e) {
-      if (e.requires_verification) {
+    } catch (err) {
+      if (err.requires_verification) {
+        sessionStorage.setItem('pending_email', err.email || email);
         navigate('/verify-otp');
-        return;
+        toast(err.error, 'info');
+      } else {
+        toast(err.error || 'Login failed', 'error');
       }
-      error = e.error || e.message || 'Login failed';
     } finally {
       loading = false;
     }
   }
 
-  async function handleGoogleLogin() {
+  async function googleLogin() {
+    googleLoading = true;
     try {
-      const data = await api.getGoogleAuthUrl();
-      if (data.url) window.location.href = data.url;
-    } catch (e) {
-      error = 'Google login unavailable';
+      const { url } = await api.getGoogleAuthUrl();
+      window.location.href = url;
+    } catch {
+      toast('Could not start Google sign-in', 'error');
+      googleLoading = false;
     }
-  }
-
-  function handleKeydown(e) {
-    if (e.key === 'Enter') handleLogin();
   }
 </script>
 
-<div class="min-h-screen flex items-center justify-center px-4 pt-20">
-  <div class="w-full max-w-md animate-scale">
-    <div class="glass p-8 rounded-3xl">
-      <!-- Header -->
-      <div class="text-center mb-8">
-        <div class="w-14 h-14 rounded-2xl bg-gradient-to-br from-primary to-accent mx-auto flex items-center justify-center text-white font-bold text-2xl mb-4 animate-float">
-          D
+<div class="min-h-[calc(100vh-4rem)] grid lg:grid-cols-2">
+  <!-- Left: form -->
+  <div class="flex items-center justify-center px-6 py-16">
+    <div class="w-full max-w-md animate-rise">
+      <div class="flex items-center gap-3 mb-8">
+        <Logo size={44} />
+        <div>
+          <h1 class="font-display text-2xl font-bold tracking-tight">Welcome back</h1>
+          <p class="text-sm text-[var(--color-ink-dim)]">Daisy kept every memory safe.</p>
         </div>
-        <h1 class="text-2xl font-bold text-white">Welcome back</h1>
-        <p class="text-white/50 text-sm mt-1">Sign in to continue to Daisy</p>
       </div>
 
-      <!-- Error -->
-      {#if error}
-        <div class="mb-4 px-4 py-3 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 text-sm animate-slide-up">
-          {error}
-        </div>
-      {/if}
-
-      <!-- Form -->
-      <div class="space-y-4">
+      <form onsubmit={handleLogin} class="space-y-4">
         <div>
-          <label class="block text-sm text-white/60 mb-1.5">Email</label>
-          <input
-            type="email"
-            bind:value={email}
-            onkeydown={handleKeydown}
-            placeholder="you@example.com"
-            class="w-full px-4 py-3 rounded-xl bg-surface-lighter border border-glass-border text-white placeholder-white/30 text-sm transition-all duration-300"
-          />
+          <label class="block text-sm font-medium mb-1.5 text-[var(--color-ink-dim)]" for="login-email">Email</label>
+          <input id="login-email" type="email" class="input-field" placeholder="you@anywhere.com" bind:value={email} autocomplete="email" />
         </div>
         <div>
-          <label class="block text-sm text-white/60 mb-1.5">Password</label>
-          <input
-            type="password"
-            bind:value={password}
-            onkeydown={handleKeydown}
-            placeholder="••••••••"
-            class="w-full px-4 py-3 rounded-xl bg-surface-lighter border border-glass-border text-white placeholder-white/30 text-sm transition-all duration-300"
-          />
+          <label class="block text-sm font-medium mb-1.5 text-[var(--color-ink-dim)]" for="login-password">Password</label>
+          <div class="relative">
+            <input
+              id="login-password"
+              type={showPassword ? 'text' : 'password'}
+              class="input-field pr-12"
+              placeholder="••••••••"
+              bind:value={password}
+              autocomplete="current-password"
+            />
+            <button
+              type="button"
+              class="absolute right-3 top-1/2 -translate-y-1/2 text-[var(--color-ink-faint)] hover:text-white cursor-pointer"
+              onclick={() => (showPassword = !showPassword)}
+              aria-label="Toggle password visibility"
+            >
+              {showPassword ? '🙈' : '👁️'}
+            </button>
+          </div>
         </div>
+
+        <button type="submit" disabled={loading} class="btn-primary w-full py-3.5 mt-2">
+          {#if loading}
+            <span class="inline-flex gap-1.5 items-center">
+              <span class="typing-dot"></span><span class="typing-dot"></span><span class="typing-dot"></span>
+            </span>
+          {:else}
+            Log in
+          {/if}
+        </button>
+      </form>
+
+      <div class="flex items-center gap-4 my-6">
+        <div class="flex-1 h-px bg-white/10"></div>
+        <span class="text-xs text-[var(--color-ink-faint)] uppercase tracking-widest">or</span>
+        <div class="flex-1 h-px bg-white/10"></div>
       </div>
 
-      <!-- Login button -->
-      <button
-        onclick={handleLogin}
-        disabled={loading}
-        class="w-full mt-6 py-3 rounded-xl bg-gradient-to-r from-primary to-accent text-white font-semibold btn-glow hover:scale-[1.02] transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed"
-      >
-        {#if loading}
-          <span class="flex items-center justify-center gap-2">
-            <svg class="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>
-            Signing in...
-          </span>
-        {:else}
-          Sign In
-        {/if}
-      </button>
-
-      <!-- Divider -->
-      <div class="flex items-center gap-3 my-6">
-        <div class="flex-1 h-px bg-glass-border"></div>
-        <span class="text-xs text-white/30">or</span>
-        <div class="flex-1 h-px bg-glass-border"></div>
-      </div>
-
-      <!-- Google -->
-      <button
-        onclick={handleGoogleLogin}
-        class="w-full py-3 rounded-xl border border-glass-border text-white/70 font-medium hover:bg-surface-lighter hover:text-white transition-all duration-300 flex items-center justify-center gap-2"
-      >
-        <svg class="w-5 h-5" viewBox="0 0 24 24"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 01-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/></svg>
+      <button onclick={googleLogin} disabled={googleLoading} class="btn-ghost w-full py-3.5">
+        <svg width="18" height="18" viewBox="0 0 24 24">
+          <path fill="#EA4335" d="M12 5.04c1.7 0 3.22.58 4.42 1.73l3.28-3.28C17.7 1.64 15.08.56 12 .56 7.42.56 3.44 3.22 1.53 7.02l3.83 2.97C6.29 7.14 8.9 5.04 12 5.04z"/>
+          <path fill="#4285F4" d="M23.49 12.27c0-.85-.08-1.66-.22-2.45H12v4.64h6.45c-.28 1.48-1.12 2.73-2.39 3.57l3.72 2.88c2.17-2 3.71-4.96 3.71-8.64z"/>
+          <path fill="#FBBC05" d="M5.37 14.01a6.9 6.9 0 0 1 0-4.42L1.53 6.62a11.46 11.46 0 0 0 0 10.36l3.84-2.97z"/>
+          <path fill="#34A853" d="M12 23.04c3.08 0 5.67-1.01 7.56-2.75l-3.72-2.88c-1.03.7-2.35 1.11-3.84 1.11-3.1 0-5.71-2.1-6.64-4.95l-3.83 2.97c1.91 3.8 5.89 6.5 10.47 6.5z"/>
+        </svg>
         Continue with Google
       </button>
 
-      <!-- Footer -->
-      <p class="text-center text-sm text-white/40 mt-6">
-        Don't have an account?
-        <a href="#/register" class="text-primary-light hover:text-primary transition-colors"> Sign up</a>
+      <p class="text-center text-sm text-[var(--color-ink-dim)] mt-8">
+        New here?
+        <a href="#/register" class="text-[var(--color-primary-300)] hover:text-white font-medium ml-1">Create an account</a>
       </p>
+    </div>
+  </div>
+
+  <!-- Right: ambience panel -->
+  <div class="hidden lg:flex items-center justify-center relative overflow-hidden">
+    <div
+      class="absolute inset-0"
+      style="background:radial-gradient(ellipse 70% 60% at 70% 30%,rgba(139,92,246,.18),transparent),radial-gradient(ellipse 60% 50% at 30% 80%,rgba(244,114,182,.12),transparent)"
+    ></div>
+    <div class="relative max-w-md px-10 stagger">
+      <blockquote class="font-hand text-4xl leading-snug text-[var(--color-primary-200)]">
+        "I told her about the job offer on Tuesday. She still asks how my first week went."
+      </blockquote>
+      <p class="mt-6 text-sm text-[var(--color-ink-dim)]">— Maya, talking to Daisy for 214 days straight</p>
+      <div class="mt-10 flex gap-3">
+        <span class="glass rounded-full px-4 py-2 text-xs">🧠 remembers context</span>
+        <span class="glass rounded-full px-4 py-2 text-xs">📖 writes diaries</span>
+      </div>
     </div>
   </div>
 </div>

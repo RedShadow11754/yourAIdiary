@@ -44,7 +44,6 @@ async function request(url, options = {}) {
     throw { status: res.status, ...error };
   }
 
-  // Handle redirect responses or empty bodies
   const text = await res.text();
   if (!text) return {};
   return JSON.parse(text);
@@ -63,10 +62,12 @@ export const api = {
   getChatHistory: () => request('/chat/history/'),
 
   // Personality
-  updatePersonality: (data) => request('/customize_personalization/', { method: 'POST', body: JSON.stringify(data) }),
+  updatePersonality: (data) =>
+    request('/customize_personalization/', { method: 'POST', body: JSON.stringify(data) }),
 
   // Diary
   getDiaryEntries: () => request('/entries/'),
   getDiaryEntry: (id) => request(`/entries/${id}/`),
-  editDiaryEntry: (id, content) => request(`/entries/${id}/edit/`, { method: 'PATCH', body: JSON.stringify({ content }) }),
+  editDiaryEntry: (id, content) =>
+    request(`/entries/${id}/edit/`, { method: 'PATCH', body: JSON.stringify({ content }) }),
 };
