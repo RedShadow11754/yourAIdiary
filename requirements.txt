@@ -19,7 +19,7 @@ redis==5.2.1
 langchain-groq==0.3.4
 
 # Vector DB
-qdrant-client==1.14.0
+qdrant-client==1.9.1
 
 
 # CORS
