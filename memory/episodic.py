@@ -41,37 +41,44 @@ def store_episodic_memory(user, summary: str, category: str = "general"):
 
 
 def retrieve_relevant_memories(user, current_message: str, top_k: int = 6) -> str:
-    vector = embed(current_message)
-
-    results = client.search(
-        collection_name=COLLECTION_NAME,
-        query_vector=vector,
-        query_filter=Filter(
-            must=[
-                FieldCondition(
-                    key="user_id",
-                    match=MatchValue(value=user.id)
-                )
-            ]
-        ),
-        limit=top_k,
-        with_payload=True,
-    )
-
-    if not results:
+    if not client:
         return ""
 
-    retrieved_ids = [hit.id for hit in results]
-    EpisodicMemoryLog.objects.filter(
-        qdrant_id__in=retrieved_ids
-    ).update(last_referenced_at=django_timezone.now())
+    try:
+        vector = embed(current_message)
 
-    memory_lines = []
-    for hit in results:
-        payload = hit.payload
-        category = payload.get("category", "general")
-        summary = payload.get("summary", "")
-        created_at = payload.get("created_at", "")[:10]
-        memory_lines.append(f"[{category} | {created_at}] {summary}")
+        results = client.search(
+            collection_name=COLLECTION_NAME,
+            query_vector=vector,
+            query_filter=Filter(
+                must=[
+                    FieldCondition(
+                        key="user_id",
+                        match=MatchValue(value=user.id)
+                    )
+                ]
+            ),
+            limit=top_k,
+            with_payload=True,
+        )
 
-    return "\n".join(memory_lines)
+        if not results:
+            return ""
+
+        retrieved_ids = [hit.id for hit in results]
+        EpisodicMemoryLog.objects.filter(
+            qdrant_id__in=retrieved_ids
+        ).update(last_referenced_at=django_timezone.now())
+
+        memory_lines = []
+        for hit in results:
+            payload = hit.payload
+            category = payload.get("category", "general")
+            summary = payload.get("summary", "")
+            created_at = payload.get("created_at", "")[:10]
+            memory_lines.append(f"[{category} | {created_at}] {summary}")
+
+        return "\n".join(memory_lines)
+    except Exception as e:
+        print(f"[Qdrant] Search failed: {e}")
+        return ""

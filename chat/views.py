@@ -37,8 +37,12 @@ class ChatView(APIView):
         print(f"core memory: {core_memory_str}")
 
         # --- Memory: retrieve relevant episodic memories ---
-        episodic_memories_str = retrieve_relevant_memories(request.user, message)
-        print(f"episodic memory{episodic_memories_str}")
+        try:
+            episodic_memories_str = retrieve_relevant_memories(request.user, message)
+        except Exception as e:
+            print(f"[Chat] Episodic memory retrieval failed: {e}")
+            episodic_memories_str = ""
+        print(f"episodic memory: {episodic_memories_str}")
 
         # --- Build ultimate_info ---
         ultimate_info = ""

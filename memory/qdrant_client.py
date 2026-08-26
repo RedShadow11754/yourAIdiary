@@ -3,11 +3,15 @@ from qdrant_client.models import Distance, VectorParams
 import os
 
 QDRANT_URL = os.getenv("QDRANT_URL", "")
+QDRANT_API_KEY = os.getenv("QDRANT_API_KEY", "")
 COLLECTION_NAME = "episodic_memories"
 VECTOR_SIZE = 384
 
 # Only create client if URL is set — avoids crash during startup on Render
-client = QdrantClient(url=QDRANT_URL) if QDRANT_URL else None
+if QDRANT_URL:
+    client = QdrantClient(url=QDRANT_URL, api_key=QDRANT_API_KEY if QDRANT_API_KEY else None)
+else:
+    client = None
 
 
 def ensure_collection_exists():
