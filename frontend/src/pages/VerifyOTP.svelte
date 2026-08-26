@@ -9,9 +9,16 @@
   let loading = $state(false);
   let resendIn = $state(0);
 
+  let digits = $state(['', '', '', '', '', '']);
+
   // Auto-fill OTP if passed from register flow (when email isn't working)
-  const savedOtp = sessionStorage.getItem('pending_otp') || '';
-  let digits = $state(savedOtp ? savedOtp.split('').concat(['', '', '', '', '', '']).slice(0, 6) : ['', '', '', '', '', '']);
+  $effect(() => {
+    const savedOtp = sessionStorage.getItem('pending_otp');
+    if (savedOtp && savedOtp.length === 6) {
+      digits = savedOtp.split('');
+      sessionStorage.removeItem('pending_otp');
+    }
+  });
 
   let code = $derived(digits.join(''));
 
@@ -33,6 +40,16 @@
     if (v && i < 5) boxes[i + 1]?.focus();
     if (code.length === 6 && !code.includes('')) verify();
   }
+
+  // Sync pre-filled digits into input DOM
+  $effect(() => {
+    const _ = code; // depend on code so this runs after digits change
+    requestAnimationFrame(() => {
+      digits.forEach((d, i) => {
+        if (boxes[i] && boxes[i].value !== d) boxes[i].value = d;
+      });
+    });
+  });
 
   function onKeydown(i, e) {
     if (e.key === 'Backspace' && !digits[i] && i > 0) {
