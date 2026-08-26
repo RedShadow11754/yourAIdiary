@@ -13,6 +13,7 @@
   import Personality from './pages/Personality.svelte';
   import Diary from './pages/Diary.svelte';
   import DiaryEntry from './pages/DiaryEntry.svelte';
+  import GoogleSuccess from './pages/GoogleSuccess.svelte';
 
   initAuth();
 
@@ -29,13 +30,14 @@
     if (route === '/personality') return Personality;
     if (route === '/diary') return Diary;
     if (route.startsWith('/diary/')) return DiaryEntry;
+    if (route === '/auth/google/success') return GoogleSuccess;
     return Home;
   });
 
   // Route guards: authed users skip auth pages; guests skip app pages
   $effect(() => {
     const route = router.currentRoute;
-    const isAuthPage = ['/login', '/register', '/verify-otp'].includes(route);
+    const isAuthPage = ['/login', '/register', '/verify-otp', '/auth/google/success'].includes(route);
     if (auth.isAuthenticated && isAuthPage) {
       window.location.hash = '#/chat';
     }
