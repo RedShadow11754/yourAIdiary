@@ -33,9 +33,15 @@
     }
     loading = true;
     try {
-      await api.register({ email, password });
+      const res = await api.register({ email, password });
       sessionStorage.setItem('pending_email', email);
-      toast('Account created! Check your inbox for the code 📬', 'success');
+      // If email isn't working, backend returns otp_code — pass it to verify page
+      if (res.otp_code) {
+        sessionStorage.setItem('pending_otp', res.otp_code);
+        toast('Account created! Enter the code below 👇', 'success');
+      } else {
+        toast('Account created! Check your inbox for the code 📬', 'success');
+      }
       navigate('/verify-otp');
     } catch (err) {
       toast(err.error || Object.values(err)[0] || 'Registration failed', 'error');

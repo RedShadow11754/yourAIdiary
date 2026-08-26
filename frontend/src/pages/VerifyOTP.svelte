@@ -6,9 +6,12 @@
 
   let email = $state(sessionStorage.getItem('pending_email') || '');
   let manualEmail = $state(false);
-  let digits = $state(['', '', '', '', '', '']);
   let loading = $state(false);
   let resendIn = $state(0);
+
+  // Auto-fill OTP if passed from register flow (when email isn't working)
+  const savedOtp = sessionStorage.getItem('pending_otp') || '';
+  let digits = $state(savedOtp ? savedOtp.split('').concat(['', '', '', '', '', '']).slice(0, 6) : ['', '', '', '', '', '']);
 
   let code = $derived(digits.join(''));
 
