@@ -43,9 +43,9 @@ def store_episodic_memory(user, summary: str, category: str = "general"):
 def retrieve_relevant_memories(user, current_message: str, top_k: int = 6) -> str:
     vector = embed(current_message)
 
-    results = client.query_points(
+    results = client.search(
         collection_name=COLLECTION_NAME,
-        query=vector,
+        query_vector=vector,
         query_filter=Filter(
             must=[
                 FieldCondition(
@@ -56,7 +56,7 @@ def retrieve_relevant_memories(user, current_message: str, top_k: int = 6) -> st
         ),
         limit=top_k,
         with_payload=True,
-    ).points  # .points gives you the list directly
+    )
 
     if not results:
         return ""
