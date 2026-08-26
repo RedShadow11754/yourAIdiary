@@ -46,7 +46,11 @@ class RegisterView(APIView):
 
         # Generate and send OTP
         otp = OTPVerification.generate_for_user(user)
-        email_sent = send_otp_email(email, email, otp.code)
+        try:
+            email_sent = send_otp_email(email, email, otp.code)
+        except Exception as e:
+            print(f"[Register] Email send crashed: {e}")
+            email_sent = False
 
         response_data = {
             "message": "Account created. Please check your email for your verification code.",
@@ -120,7 +124,10 @@ class ResendOTPView(APIView):
             return Response({"error": "No unverified account found with this email."}, status=404)
 
         otp = OTPVerification.generate_for_user(user)
-        send_otp_email(email, email, otp.code)
+        try:
+            send_otp_email(email, email, otp.code)
+        except Exception as e:
+            print(f"[ResendOTP] Email send crashed: {e}")
 
         return Response({"message": "A new verification code has been sent to your email."})
 
