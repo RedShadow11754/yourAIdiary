@@ -28,9 +28,12 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 SECRET_KEY = os.getenv('DJANGO_SECRET_KEY', 'django-insecure-0mcjd2j53tzw4w1!3@z%kx01b3qg0st3zyob)w(m604+mze%mr')
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = os.getenv('DEBUG', 'True').lower() == 'true'
+DEBUG = os.getenv('DEBUG', 'False').lower() == 'true'
 
 ALLOWED_HOSTS = os.getenv('ALLOWED_HOSTS', '').split(',') if os.getenv('ALLOWED_HOSTS') else ['*']
+
+# If you want to lock down in production, set ALLOWED_HOSTS env var
+# e.g. ALLOWED_HOSTS=youraidiary.onrender.com,your-frontend.vercel.app
 
 
 # Application definition
