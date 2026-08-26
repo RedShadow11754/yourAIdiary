@@ -190,5 +190,8 @@ GOOGLE_REDIRECT_URI = os.getenv("GOOGLE_REDIRECT_URI", "http://localhost:8000/ap
 # Jina Embeddings API (for episodic memory vectors)
 JINA_API_KEY = os.getenv('JINA_API_KEY', '')
 
-# CORS
-CORS_ALLOWED_ORIGINS = os.getenv('CORS_ALLOWED_ORIGINS', 'http://localhost:5173').split(',')
+# CORS — strip trailing slashes from origins (django-cors-headers rejects paths)
+CORS_ALLOWED_ORIGINS = [origin.strip().rstrip('/') for origin in os.getenv('CORS_ALLOWED_ORIGINS', 'http://localhost:5173').split(',') if origin.strip()]
+
+# Suppress auto-generated primary key warnings
+DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
