@@ -12,21 +12,6 @@ export function getAuth() {
 }
 
 export function initAuth() {
-  // Handle Google OAuth redirect: /auth/google/success?access=..&refresh=..&email=..
-  if (window.location.pathname === '/auth/google/success') {
-    const params = new URLSearchParams(window.location.search);
-    const access = params.get('access');
-    const refresh = params.get('refresh');
-    const email = params.get('email');
-    const isNew = params.get('new_user') === '1';
-    if (access && refresh && email) {
-      setAuth({ email, username: email }, { access, refresh });
-      window.sessionStorage.setItem('daisy_welcome', isNew ? 'new' : 'back');
-      window.history.replaceState({}, '', '/');
-      window.location.hash = '#/chat';
-    }
-  }
-
   const token = localStorage.getItem('access_token');
   const userData = localStorage.getItem('user');
   if (token && userData) {

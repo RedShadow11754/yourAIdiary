@@ -4,9 +4,9 @@ let _params = $state({});
 
 function parseRoute() {
   const hash = window.location.hash.slice(1) || '/';
-  _currentRoute = hash;
+  _currentRoute = hash.split('?')[0];
 
-  const diaryMatch = hash.match(/^\/diary\/(\d+)$/);
+  const diaryMatch = _currentRoute.match(/^\/diary\/(\d+)$/);
   _params = diaryMatch ? { id: diaryMatch[1] } : {};
 }
 

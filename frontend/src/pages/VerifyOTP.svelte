@@ -38,7 +38,7 @@
     digits[i] = v;
     digits = [...digits];
     if (v && i < 5) boxes[i + 1]?.focus();
-    if (code.length === 6 && !code.includes('')) verify();
+    if (code.length === 6) verify();
   }
 
   // Sync pre-filled digits into input DOM
@@ -68,7 +68,7 @@
   }
 
   async function verify() {
-    if (loading || code.length !== 6 || code.includes('')) return;
+    if (loading || code.length !== 6) return;
     loading = true;
     try {
       const res = await api.verifyOtp({ email, code });
@@ -150,7 +150,7 @@
     {:else}
       <button
         class="btn-primary w-full py-3.5 mt-8"
-        disabled={code.length !== 6 || code.includes('')}
+        disabled={code.length !== 6}
         onclick={verify}
       >
         Verify & enter
