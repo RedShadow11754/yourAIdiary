@@ -4,6 +4,8 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework_simplejwt.tokens import RefreshToken
+from rest_framework.response import Response
+from rest_framework.decorators import api_view
 from rest_framework import generics, permissions
 from django.conf import settings
 import os
@@ -241,3 +243,7 @@ class GoogleAuthCallbackView(APIView):
         tokens = get_tokens_for_user(user)
         params = urllib.parse.urlencode({"access": tokens["access"], "refresh": tokens["refresh"], "email": user.email, "new_user": "1" if created else "0"})
         return django_redirect(f"{FRONTEND_URL}/#/auth/google/success?{params}")
+@api_view(['GET'])
+def PythonAnywhere(request):
+    print("we got it")
+    return Response({"message": "success"})

@@ -6,6 +6,7 @@ from .views import (
     LoginView,
     GoogleAuthInitView,
     GoogleAuthCallbackView,
+    PythonAnywhere
 )
 
 urlpatterns = [
@@ -15,4 +16,5 @@ urlpatterns = [
     path("login/", LoginView.as_view()),
     path("google/", GoogleAuthInitView.as_view()),
     path("google/callback/", GoogleAuthCallbackView.as_view()),
+    path("keep-alive/",PythonAnywhere),
 ]
